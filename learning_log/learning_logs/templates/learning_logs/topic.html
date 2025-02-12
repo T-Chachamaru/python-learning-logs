@@ -1,0 +1,27 @@
+{% extends 'learning_logs/base.html' %}
+{% load django_bootstrap5 %}
+
+{% block page_header %}
+<h1 class="text-center">主题: {{ topic }}</h1>
+{% endblock page_header %}
+
+{% block content %}
+<div class="container">
+    <p>
+        <a href="{% url 'learning_logs:new_entry' topic.id %}" class="btn btn-primary">添加新条目</a>
+    </p>
+    {% for entry in entries %}
+    <div class="card mb-3">
+        <!--包含时间戳和编辑链接的标题-->
+        <h4 class="card-header">
+            {{ entry.date_added|date:'Y 年 m 月 d 日 H:i' }}
+            <small><a href="{% url 'learning_logs:edit_entry' entry.id %}" class="btn btn-link">编辑条目</a></small>
+        </h4>
+        <!--包含条目文本的正文-->
+        <div class="card-body">{{ entry.text|linebreaks }}</div>
+    </div>
+    {% empty %}
+    <p class="text-center">这个主题还没有相关条目。</p>
+    {% endfor %}
+</div>
+{% endblock content %}

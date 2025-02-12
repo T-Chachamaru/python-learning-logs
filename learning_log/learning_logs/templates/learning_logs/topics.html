@@ -1,0 +1,21 @@
+{% extends 'learning_logs/base.html' %}
+{% load django_bootstrap5 %}
+
+{% block page_header %}
+<h1 class="text-center">主题</h1>
+{% endblock page_header %}
+
+{% block content %}
+<div class="container">
+    <ul class="list-group border-bottom pb-2 mb-4">
+        {% for topic in topics %}
+        <li class="list-group-item border-0">
+            <a href="{% url 'learning_logs:topic' topic.id %}" class="btn btn-link">{{ topic.text }}</a>
+        </li>
+        {% empty %}
+        <li class="list-group-item border-0">还没有添加任何主题。</li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'learning_logs:new_topic' %}" class="btn btn-primary">添加一个新主题</a>
+</div>
+{% endblock content %}
