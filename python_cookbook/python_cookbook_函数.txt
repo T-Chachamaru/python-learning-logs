@@ -1,0 +1,216 @@
+7.1-编写可接受任意数量参数的函数
+*运算符可以接受任意数量的位置参数并转换为元组,**运算符可以接受任意数量的关键字参数并转换为字典
+
+7.2-编写只接受关键字参数的函数
+将关键字参数放在*打头的参数或一个单独的*后
+def recv(x,*,y)
+这样就只能通过关键字访问该参数,这种参数叫做keyword-only参数
+keyword-only参数能够提高代码可读性,在更加高级的上下文环境中同样也能起到作用。比如可以用来为函数注入参数
+这些函数利用*args和**kwargs接受所有的输入参数
+
+7.3-将元数据信息附加到函数参数上
+函数的参数注解可以提示程序员应该如何使用它,如
+def add(x:int,y:int) -> int:
+	return x + y
+解释器并不会附加任何语法意义到这些参数注解上。它们既不是类型检查,也不会改变python的行为,但会给其他阅读源代码的人带来有用的提示
+注解只会保存在函数的__annotations__属性中
+
+7.4-从函数中返回多个值
+return 1,2,3
+这样就可以返回多个值,虽然看起来是返回了多个值,但实际上是返回了一个(1,2,3)的元组
+实际上,元组就是通过逗号来组成的,而不是那些圆括号,这样也解释了为何我们能用
+a,b = 1,2
+这样的奇怪赋值方法。当调用的函数返回了元组,通常会将结果赋给多个变量,返回的结果也可以只赋给一个变量
+
+7.5-定义带有默认参数的函数
+简单地看,定义一个带有默认参数的函数似乎非常简单,只需要在定义中为参数指定值,然后将关键字参数放在最后就行了
+def spam(a,b=20):
+	...
+# 如果默认值是可变容器的话,比如说列表、集合或者字典,那么应该把None作为默认值
+如果不打算提供一个默认值,只是想编写代码检测可选参数是否被赋予了某个特定的值
+_no_value = object()
+def spam(a,b=_no_value):
+	if b is _no_value:
+		break
+# 这是常用的检测方法,该参数无论是传递什么值,无论是0还是None,都认为是有值的
+其实定义带有默认参数的函数并不简单,首先,对默认参数的赋值只会在函数定义的时候绑定一次
+x = 10
+def spam(a,b=x):
+	...
+x = 2
+# 关键字参数b会一直等于10,而不会因为变量x的值的变化而变化
+# 因此,给默认参数赋值时应该总是赋予不可变的对象,比如None、True、False、数字或者字符串
+
+7.6-定义匿名或内联函数
+匿名或内联函数通常用于回调函数,用来给sort等函数使用
+add = lambda x,y: x + y
+与下相同
+def add(x,y):
+	return x + y
+
+7.7-在匿名函数中绑定变量的值
+lambda函数其中的变量是自由变量,在执行时的值是什么,那么值就是什么
+例如有一个匿名函数lambda y:x + y
+x = 10
+a = lambda y:x + y
+x = 20
+b = lambda y:x + y
+函数a和b都把x=20作为值
+如果喜欢在定义时就绑定变量并且保持值不变,那么可以用lambda y,x=x:x+y实现
+
+7.8-让带有N个参数的可调用对象以较少的参数形式调用
+我们有一个可调用对象可能会以回调函数的形式同其他的python代码交互。但是这个可调用对象需要的参数过多,如果直接调用的话会产生异常
+如果需要减少函数的参数数量,应该使用functools.partial。函数partial允许我们给一个或多个参数指定固定的值,以此减少需要提供之后调用的参数数量
+假设有这么一个函数
+def spam(a,b,c,d):
+	print(a,b,c,d)
+现在用partial对参数赋固定的值
+s1 = partial(spam,1)
+# a被默认值为1
+s2 = partial(spam,d=42)
+# d被默认值为42
+s3 = partial(spam,1,2,d=42)
+# 除了c,其他参数都被赋予了默认值
+-
+因此,我们能有这样的应用,假设有一列以元组(x,y)表示的点坐标。可以用下面的函数来计算两点之间的距离
+points = [(1,2),(3,4),(5,6)]
+import math
+def distance(p1,p2):
+	x1,y1 = p1
+	x2,y2 = p2
+	return math.hypot(x2-x1,y2-y1)
+现在想要根据这些点之间的距离进行排序。列表的sort方法的key参数只能和接受单参数的函数一起工作。
+pt = (4,3)
+pints.sort(key=partial(distance,pt))
+现在它能正常使用了
+
+7.9-用函数替代只有单个方法的类
+很多情况下,只有单个方法的类可以通过闭包转换成函数。如
+from urllib.request import urlopen
+class UrlTemplate:
+	def __init__(self,template):
+		self.template = template
+	def open(self,**kwargs):
+		return urlopen(self.template.format_map(kwargs))
+这个类可以用一个简单的函数来取代
+def urltemplate(template):
+	def opener(**kwargs):
+		return urlopen(template.format_map(kwargs))
+	return opener
+
+7.10-在回调函数中携带额外的状态
+我们正在编写需要使用回调函数的代码,但是希望回调函数可以携带额外的状态以便在回调函数内部使用,如
+def apply_async(func,args,*,callback):
+	result = func(*args)
+	callback(result)
+现实环境中,这种类似的代码一般会用在完成各种高级的处理任务上,涉及到线程、进程和定时器。但现在,我们只把注意力集中在对回调函数的调用上
+def print_result(result):
+	print('Got:',result)
+def add(x,y):
+	return x,y
+apply_async(add,(2,3),callback=print_result)
+# Got:5。但print_result仅接受一个单独的参数,并没有传入其他的信息到函数中,有时候当我们希望回调函数可以同其他变量或者部分环境进行交互时
+# 缺乏这类信息就会带来问题
+一种在回调函数中携带额外信息的方法是使用绑定方法而不是普通的函数,比如
+class ResultHandler:
+	def __init__(self):
+		self.sequence = 0
+	def handler(self,result):
+		self.sequence += 1
+		print('[{}] Got: {}'.format(self.sequence,result))
+# 这个类保存了一个内部的序列号码,每当接收到一个结构时就递增这个号码
+# 要使用这个类,可以先创建一个类实例,然后将绑定方法handler当做回调函数来用
+也可以使用闭包来捕获状态,比如
+def make_handler():
+	sequence = 0
+	def handler(result):
+		nonlocal sequence
+		sequence += 1
+		print('[{}] Got: {}'.format(sequence,result))
+return handler
+# 参考7.9节
+最后还有一种办法,有时候可以利用协程完成同样的任务
+def make_handler():
+	sequence = 0
+	while True:
+		result = yield
+		sequence += 1
+		print('[{}] Got: {}'.format(sequence,result))
+# 对于协程,使用它的send方法来作为回调函数
+handler = make_handler()
+next(handler)
+apply_async(add,(2,3),callback=handler.send)
+
+7.11-内联回调函数
+使用生成器和协程可以将回调函数内联到一个函数中,从而更易地操控程序的控制流,如
+from queue import Queue
+from functools import wraps
+def apply_async(func,args,*,callback):
+	result = func(*args)
+	callback(result)
+class Async:
+	def __init__(self,func,args):
+		self.func = func
+		self.args = args
+def inlined_async(func):
+	@wraps(func)
+	def wrapper(*args):
+		f = func(*args)
+		result_queue = Queue()
+		result_queue.put(None)
+		while True:
+			result = result_queue.get()
+			try:
+				a = f.send(result)
+				apply_async(a.func,a.args,callback=result_queue.put)
+			except StopIteration:
+				break
+		return wrapper
+def add(x,y):
+	return x + y
+@inlined_async
+def test():
+	r = yield Async(add,(2,3))
+	print(r)
+	r = yield Async(add,('hello','world'))
+	print(r)
+	for n in range(10):
+		r = yield Async(add,(n,n))
+		print(r)
+	print('Goodbye')
+test()
+# 该代码实现了一种同步模拟的异步操作,运用装饰器和Async类和生成器将回调函数隐藏在幕后
+
+7.12-访问定义在闭包内的变量
+一般情况下,闭包内的变量是与外界隔离的,但通过编写存取函数并将它们作为函数属性附加到闭包上来提供对内层变量的访问支持
+def sample():
+	n = 0
+	def func():
+		print('n=',n)
+	def get_n():
+		return n
+	def set_n(value):
+		nonlocal n
+		n = value
+	func.get_n = get_n
+	func.set_n = set_n
+	return func
+# 像类实例一样使用sample
+还可以模拟地更像类实例
+import sys
+class ClosureInstance:
+	def __init__(self,locals=None):
+		if locals is None:
+			locals = sys._getframe(1).f_locals
+		self.__dict__.update((key,value) for key,value in locals.items() if callable(value))
+	def __len__(self):
+		return self.__dict__['__len__']()
+def Stack():
+	items = []
+	def push(item):
+		items.append(item)
+	def pop():
+		return items.pop()
+	def __len__():
+		return len(items)
+	return ClosureInstance()

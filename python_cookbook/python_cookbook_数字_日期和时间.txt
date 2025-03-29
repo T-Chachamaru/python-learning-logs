@@ -1,0 +1,194 @@
+3.1-对数值进行取整
+round函数可以做到简单的取整操作,但当某值恰好等于两个整数间的一半时,取整操作会取到离该值最接近的偶数上,比如1.5和2.5都会取值到2
+round函数可以使用负数传递给位数参数,例如
+a = 1627731
+round(a, -1) = 1627730
+round(a, -2) = 1627700
+round(a, -3) = 1628000
+
+3.2-执行精确的小数计算
+decimal模块给浮点数运算带来了更高的精度
+from decimal import Decimal
+a = Decimal('4.2')
+b = Decimal('2.1')
+# Decimal对象能以期望的方式来对浮点数做计算,它支持所有常见的数学操作,使用时就像使用普通的数字一样
+decimal模块的主要功能是允许控制计算过程中的各个方面,这包括数字的位数和四舍五入。要做到这些,需要创建一个本地的上下文环境然后修改设定
+from decimal import localcontext
+with localcontext() as ctx:
+	ctx.prec = 3
+	print(a / b)
+# 这样就能以真正的数学上的四舍五入的方式来对浮点数做运算
+
+3.3-对数值做格式化输出
+可以使用format函数
+format(x, '0.2f')
+format(x, '>10.1f')
+format(x, '<10.1f')
+format(x, ',')
+format(x, '0,.1f')
+等等方法都可以使用,同样的方法也可用于字符串的.format方法中
+'{:0,.2f}'.format(x)
+
+3.4-同二进制、八进制和十六进制数打交道
+要将一个整数转换成二进制、八进制或十六进制的文本字符串形式,只要分别以bin、oct、hex函数即可
+产生的符号可以用format方法并加上'b'、'o'、'x'等参数去除
+而整数是有符号的,如果需要产出一个无符号的数值,需要加上最大值来设置比特位的长度,比如展示一个32位数
+x = -1234
+format(2**32 + x, 'b')
+format(2**32 + x, 'x')
+# 这将会完整展示它们的无符号形式
+而要将字符串形式的整数转换成不同的进制,只需要使用int函数再配合适当的进制即可
+int('4d2', 16)
+int('10011010010', 2)
+-
+在大多数情况下,处理进制都是非常直接的。只是需要记住,这些转换只适用于转换整数的文本表示形式,实际在底层只有一种整数类型
+在python中使用八进制还需要注意一点不同
+os.chmod('script.py', 0o755)
+python解释器加上0o才能正常识别八进制数
+
+3.5-从字节串中打包和解包大整数
+假设程序需要处理一个有着16个元素的字符串,其中保存一个128位的整数,要将字节解释成整数,可以用int.from_bytes函数
+int.from_bytes(data, 'little')
+int.from_bytes(data, 'big')
+# from_bytes函数能够指定大端序或小端序,将bytes类型的数值转换成整数,使用to_bytes则是逆序把整数转换成bytes类型
+我们还可以使用struct模块来完成对数据的解包,只不过struct模块对可解包的整数大小是有限制的。因此,需要解包多个值,再将它们合起来得到最终结果
+hi, lo = struct.unpack('>QQ', data)
+(hi << 64) + lo
+有时候要将一个整数打包成字节串,但字节大小不合适的话就会得到一个错误信息,可以使用int.bit_length函数来确定需要多少位才能保存这个值
+
+3.6-复数运算
+复数可以通过complex(real, imag)函数指定,或者通过浮点数加上后缀j指定
+实部、虚部、共轭值可以很方便地提取出来,所有常见的算术运算都适用于复数,而如果要执行有关复数的函数操作,如求正弦、余弦或平方根,可以使用cmath模块
+python中大部分和数学相关的模块都可适用于复数,例如使用numpy模块可以很直接地创建复数数组并对它们进行操作
+a = np.array([2+3j, 4+5j])
+a + 2 
+np.sin(a)
+标准数学函数则默认不会产生复数值,sqrt(-1)会报错,如果希望产生复数结果,就需要使用cmath或者在可以感知复数的库中声明对复数类型的使用
+
+3.7-处理无穷大和NaN
+python中可以通过float函数创建这种特殊的数float('inf')、float('-inf')、float('nan')
+而要检测是否出现了这些值,可以使用math.isinf和math.isnan函数
+要在python中使用这些值,需要清楚无穷大值在数学计算中会进行传播,例如无穷大a+45等于无穷大,a*10依然等于无穷大,而10/a等于无穷小,在python中表示为0
+但某些特定的操作会导致未定义的行为并产生nan的结果,例如a/a等于nan,正无穷a加上负无穷b等于nan
+nan则会通过所有的操作进行传播,且不会引发任何异常,同时在任何时候nan都不会相等
+
+3.8-分数的计算
+fractions模块可以用来处理涉及分数的数学计算问题
+from fraction import Fraction
+a = Fraction(5, 4)
+b = Fraction(7, 16)
+c = a * b == 35/64
+c.numerator == 35
+c.denominator == 64
+float(c) == 0.546875
+
+3.9-处理大型数组的计算
+对于任何涉及数组的计算密集型任务,我们要使用NumPy库,它为python提供了数组对象,比标准的列表有更好的性能
+numpy数组与列表有一些不同之处,例如
+x = [1,2,3,4]
+y = [4,5,6,7]
+x * 2 == [1,2,3,4,1,2,3,4]
+x + 10 == 报错
+x + y == 将两个列表拼接在一起
+而numpy完全不同
+x = np.array([1,2,3,4])
+x * 2 == [2,4,6,8]
+a + 10 == 数组里的每个数都加10
+两个数组相加或相乘 == 按顺序将元素加乘
+-
+numpy还提供了一些通用函数的集合,如sqrt、cos等
+使用numpy中的通用函数比对数组进行迭代然后用math函数每次只处理一个元素要快上百倍,因此只要有可能就应该使用这些通用函数
+在底层设计中,numpy的内存分配方式和C一样,它们是大块的连续内存,由同一种数据类型组成。正是因为这样
+numpy才能创建比通常python中的列表大的多的数组,创建一个10000*10000的二维浮点数组完全不是问题
+grid = np.zeros(shape=(10000,10000),dtype=float)
+-
+numpy还扩展了python列表的索引功能,尤其是针对多维数组时更是如此。
+a = np.array([[1,2,3,4],[5,6,7,8],[9,10,11,12]])
+a[1] == [1,2,3,4]
+a[:,1] == [2,6,10]
+a[1:3, 1:3] == [[6,7],[10,11]]
+a[1:3, 1:3] += 10 == 以上的值都加10
+a + [10,10,10,10] == 每个一维数组中的每个元素都加上10
+np.where(a < 10, a, 10) == 将数组中大于10的元素都变为10
+
+3.10-矩阵和线性代数的计算
+numpy库中有一个matrix对象可用来处理这种情况
+该对象和numpy数组类似,但它在计算时遵循线性代数规则
+m = np.matrix([[1,-2,3],[0,4,5],[7,8,-9]])
+m.T 返回矩阵的转置
+m.I 返回矩阵的反逆
+m * v 矩阵相乘
+更多对matrix的操作可以在numpy的linalg子模块中找到
+
+3.11-随机选择
+random模块中有各种函数可用于需要随机数和随机选择的场景。例如,要从随机序列中挑选出元素,可以使用random.choice函数
+而需要想随机取出N个元素,可以使用random.sample函数。如果只是想打乱序列顺序,可以使用random.shuffle函数
+要产生随机整数,可以使用random.randint函数。要产生0到1之间均匀分布的浮点数值,可以使用random.random函数
+如果要得到由N个随机比特位所表示的整数,可以使用random.getrandbits函数
+random通过梅森旋转算法来计算随机值,这是一个确定性算法,但可以通过random.seed函数来修改初始的种子值
+同时random模块还可以使用uniform计算均匀分布值、gauss计算正态分布值
+
+3.12-时间换算
+datetime模块可以来完成不同时间单位间的换算。例如,要表示一个时间间隔,可以像这样创建一个timedelta实例
+from datetime import timedelta
+a = timedelta(days=2, hours=6)
+b = timedelta(hours=4.5)
+# 这两个实例可以进行正确的时间加减换算
+如果需要表示特定的日期和时间,可以创建datetime实例并用标准的数学运算来操纵它们
+a = datetime(2012, 9, 23)
+a + timedelta(days=10) == 2012-10-03
+对于大部分的时间处理,datetime模块已经足够时间,但如果要处理时区、模糊时间范围、计算节日的日期等更为复杂的日期问题,需要使用dateutil模块
+它在处理月份时能填补datetime模块留下的空缺,正确处理不同月份中的天数
+
+3.13-计算上周五的日期
+datetime模块的一些函数可以解决这种问题
+from datetime import datetime, timedelta
+weekdays = [...]
+def getWeekDay(dayname, startdate=None):
+	if startdate is None:
+		startdate = datetime.today()
+	daynum = startdate.weekdays()
+	daynumtarget = weekdays.index(dayname)
+	days = (7 + daynum - daynumtarget) % 7
+	if days == 0:
+		days = 7
+	target = startdate - timedelta(days=days)
+	return target
+	
+3.14-找出当月的日期范围
+对日期进行循环迭代不需要事先构建一个包含所有日期的列表。只需计算出范围的开始和结束日期,然后在迭代时利用datetime.timedelta对象来递增日期就可以了
+from datetime import datetime, date, timedelta
+import calendar
+def get_month_range(start_date=None):
+	if start_date is None:
+		start_date = date.today().replace(day=1)
+	_, days_in_month = calendar.monthrange(start_date.year, start_date.month)
+	end_date = start_date + timedelta(days=days_in_month)
+	return (start_date, end_date)
+# 该代码用replace方法替换today函数返回的日期中的day属性,将日期改变成当月的第一天
+# 然后用calendar模块的monthrange函数找出待求解的月份中有多少天,返回当月第一个工作日的日期以及当月的天数
+# 一但知道了这个月有多少天,我们就可以创建timedelta实例加上datetime实例获得这个月开始的天数与最后的天数
+# 然后使用yield生成器递增日期,即可获得当月的所有日期
+
+3.15-将字符串转换为日期
+一般来说,我们通过datetime处理这种问题的简单使用
+text = '2012-09-20'
+y = datetime.strptime(text, '%Y-%m-%d')
+# strptime函数可用来格式化字符串,将字符串表示的日期变成datetime实例。strftime函数则是反过来,将datetime对象格式化成字符串
+
+3.16-处理涉及到时区的日期问题
+对于涉及到时区的问题,应该使用pytz模块解决,该python包提供了奥尔森时区数据库,是许多语言和操作系统使用的时区信息标准
+pyzt模块主要用来本地化由datetime库创建的日期,例如:
+from datetime import datetime
+from pytz import timezone
+d = datetime(2012, 12, 21, 9, 30, 0)
+d == 2012-12-21 9:30:00
+central = timezone('US/Central')
+loc_d = central.localize(d)
+loc_d == 2012-12-21 9:30:00-6:00
+# 该代码告诉我们如何以芝加哥时间来表示日期
+bang_d = loc_d.astimezone(timezone('Asia/Kolkata'))
+# 一但经过了本地化处理,它就可以转换为其他时区,例如以上想要知道同一时间班加罗尔是几点
+通常情况下,我们用来处理本地时间的方法是将所有日期转换为UTC时间,在所有的内部存储和处理中都使用UTC时间
+一但转换为UTC时间,就不用担心夏令时以及其他那些麻烦事了。因此,我们可以像之前那样对日期执行普通的算术运算
+而如果需要将日期以本地时间输出,只需将其转换为合适的时区即可

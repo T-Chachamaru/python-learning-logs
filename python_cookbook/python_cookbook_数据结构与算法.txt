@@ -1,0 +1,278 @@
+###第一章、数据结构与算法###
+1.1-将序列分解成单独的变量
+在python中,不仅仅只是元组或列表,只要对象是可迭代的,就可以执行分解操作。这包括字符串、文件、迭代器以及生成器,如：
+a,b,c,d,e = 'Hello' # 分解操作
+a,b,_ = 'abc' # 通过不常用的变量来丢弃不需要的值
+
+2.2-从任意长度的可迭代元素中分解元素
+python的*表达式可以用来解决这个问题。
+def drop_first_last(grades):
+	first, *middle, last = grades
+	return avg(middle)
+# 输入一个长度不一的数组,*middle运算符将包括"没有变量可赋的其他值",因此如果输入了[3,8,94,4,2,8]。
+# *middle将赋值为除去开头一个与最后一个值之外的其他值组成的数组,并由avg函数求得平均值返回
+# 无论*middle被赋予了几个值,甚至没有值。*middle都会被视为一个列表。这代表其他用到了此变量的代码不用为它可能不是一个列表而负责
+def addpress(*number)
+for tag, *args in records
+uname, *fields, homedir, sh = line.split(':')
+# *号的多种运用
+name, *_, (*_, year) = ('ACME', 50, 123.45, (12, 18, 2012))
+# 对多重嵌套的数据结构,使用括号加*的运算方式取出所需的数据
+
+1.3-保存最后N个元素
+导入collections.deque函数
+def search(lines, pattern, history=5):
+	previous_lines = deque(maxlen=history) # 创建一个history长度的固定列表,每当有新记录加入而队列已满时会自动移除最老的记录
+	for line in lines:
+		if pattern in line:
+			yield line, previous_lines 
+# yield关键字创建生成器,将搜索过程与搜索结果解耦开来。yield将会返回它右边的表达式并继续执行函数,而不会像return一样返回表达式后就退出了函数
+		previous_lines.append(line)
+# 使用deque函数可以轻易地保存操作之后的最后几个历史记录
+q = deque()
+q.append(1)
+q.appendleft(8)
+q.pop()
+q.popleft()
+# 使用deque函数创建的列表从两端添加或弹出元素的复杂度都是O(1)
+
+1.4-找到最小或最大的N个元素
+heapq中有nlargest()和nsmallest()这两个函数可以用来解决此问题
+heapq.nlargest(3, nums) # 该函数从nums列表中找出最大的三个数并返回它们的列表
+heapq.nsmallest(3, nums) # 该函数从nums列表中找出最小的三个数并返回它们的列表
+heapq.nlargest(3, nums, key=lambda s: s[price]) 
+# 使用函数的key参数可以让函数处理不同的数据结构。如定义了一个lambda函数从由字典组成的列表中取得price的值并进行取最大最小
+如果想找到的最大或最小的N歌元素很小,heappop()方法能够以更快的速度找到
+heapq.heapify(heap) # 用heapify将数据以堆的顺序排列。堆的特性是heap[0]总是最小的哪个元素
+heapq.heappop(heap) # 用该方法将最小的元素弹出,堆又会用最小的元素填充到[0],因此弹出三次就能得到最小的[2]
+# 一次弹出的复杂度是O(logN),因此找最小的数个是好选择。而如果要最小最大的值较多,则用前所介绍的另外两个函数
+# 如果只是想找到最小或最大的元素,min()和max()会更快。如果N和集合本身的大小差不多大,那么用sorted()排序后做切片操作会更快
+
+1.5-实现优先级队列
+class PriorityQueue:
+	def __init__(self):
+		self._queue = []
+		self._index = 0
+	def push(self, item, priority):
+		heapq.heappush(self._queue, (-priority, self._index, item))
+		self._index += 1
+	def pop(self):
+		return heapq.heappop(self._queue)[-1]
+# 该类使用push方法传入(任何数据结构,优先级)来抽象出一个优先级队列
+# 使用pop方法弹出优先级最大的填入其中的数据结构。而优先级相同则返回的顺序则与插入的顺序有关
+# 在具体实现中将优先级取反是为了让堆能够取出最大(优先级最高)的数据结构,如5插入堆中是-5,变成了最小的值
+# _index则是为了将具有相同优先级的元素以适当的顺序排列,同时能够将元素进行比较操作,如:
+a = (1, 0, Item('foo'))
+b = (5, 1, Item('bar'))
+c = (1, 2, Item('grok'))
+a < b 返回True
+a < c 返回True
+
+1.6-在字典中将键映射到多个值上
+如果可以使用键对列表值或键对集合值来创建一键多值的字典,但使用collections模块中的defaultdict类能够更好地创建这样的字典
+它的一个特点就是它会自动初始化第一个值,这样只需关注添加元素即可,例如:
+d = defaultdict(list)
+d['a'].append(1) # 创建了一个列表字典
+d = defaultdict(set)
+d['a'].add(1) # 创建了一个集合字典
+
+1.7-让字典保持有序
+使用collections模块的OrderedDict类
+d = OrderedDict()
+d['foo'] = 1
+d['bar'] = 2
+# 该类创建的字典将会严格按照元素初始添加的顺序进行
+# 其内部维护了一个双向链表,根据元素加入的顺序来排列键的位置。第一个新加入的元素被放置在链表的末尾,接下来对已存在的键做重新赋值不会改变键的顺序
+
+1.8-与字典有关的计算问题
+假设有一个字典在股票名称和对应的价格间做了映射,为了能对字典做一些有用的计算,通常会利用zip()将键和值反转过来
+min_price = min(zip(prices.values(), prices.keys()))
+# 使用zip迭代器从字典中取出列表的元组,并将数值放在前方,用min函数找出最小的值
+min_price = sorted(zip(prices.values(), prices.keys()))
+# 与上相同,但是用sorted方法对字典进行了排序
+min(prices, key=lambda k: prices[k]) 
+# 取得字典里最小值的键,将键传给字典可获得最小值
+
+1.9-在两个字典中寻找相同点
+a.keys() & b.keys() # 使用集合寻找两个字典相同的键
+a.keys() - b.keys() # 寻找不同的键
+a.items() & b.items() # 寻找键与值都相同的键值对
+c = {key:a[key] for key in a.keys() - {'z', 'w'}}
+# 使用列表推导式加集合过滤掉字典中特定的内容
+
+1.10-从序列中移除重复项且保持元素间顺序不变
+如果一个对象的哈希值在它的生存期内是不可变的,可以用如下的方法简单移除重复项(整数、浮点数、字符串、元组都是不可变的)
+def dedupe(items):
+	seen = set()
+	for item in items:
+		if item not in seen:
+			yield item
+			seen.add(item)
+如果想在不可哈希的对象序列中去除重复项
+def dedupe(items, key=None):
+	seen = set()
+	for item in items:
+		val = item if key is None else key(item)
+		if val not in seen:
+			yield item
+			seen.add(val)
+此函数用key参数来将不可哈希的值转换成可哈希的值,如传进来的是一个字典,可以这样传参
+a = [{'x':1, 'y':2}, {'x':1, 'y':3}, {'x':1, 'y':2}, {'x':2, 'y':4}]
+dedupe(a, key=lambda d: (d['x'], d['y']))
+# 将字典的列表里的字典值提取出来作为一个元组交给集合判断是否是重复项
+# 使用set集合可以简单地去除重复项,但不保证顺序
+
+1.11-对切片命名
+使用slice函数创建切片对象并给对象命名
+SHARES = slice(20,32)
+RPICE = slice(40,48)
+cost = int(records[SHARES]) * float(records[RPICE])
+# 使用slice对象代替[20:32]这样的切片指定,能够让代码更加可读
+a.indices(len(e))
+# 使用slice对象的indices接受一个序列的长度,返回一个元组,所有值都恰当地限制在边界以内,因此将其放入for循环的range可以避免出现IndexError异常
+
+1.12-找出序列中出现次数最多的元素
+可用collections模块中的Counter类来处理此种问题。它有一个非常方便的most_common()方法可以直接告诉我们答案
+from collections import Counter
+word_counts = Counter(words)
+top_three = word_counts.most_common(3)
+# 该代码块导入了Counter类,将一个字符串列表传入Counter中,创建Counter类
+# 然后调用该类创建的对象的most_common方法,传入一个整数,将会返回前整数个该列表出现次数最多的元素,并附带出现次数
+# Counter对象可以接收任何可哈希的对象序列作为输入。在底层实现中,Counter实际上是一个字典,在元素和它们出现的次数间做了映射
+word_counts.update(morewords)
+# 使用update方法可以更新计数,morewords是一个可用来增加字符串列表
+a = Counter(words)
+b = Counter(morewords)
+c = a + b
+# 则会将两个Counter对象表示的字典映射加起来,同样还可以做-号
+
+1.13-通过公共键对字典列表进行排序
+利用operator模块中的itemgetter函数对这类结构进行排序是非常简单的
+form operator import itemgetter
+rows_by_fname = sorted(rows, key=itemgetter('fname'))
+rws_by_uid = sorted(rows, key=itemgetter('uid'))
+# 在sorted中调用itemgetter函数,并传入字典列表中各个列表键值对的公共键
+# sorted将会用列表公共键表示的值进行排序,当然还能够传入多个键,将会按照第一个键排序完后再在相同值的基础上进行排序
+# 这些使用方法同样适用于min和max等函数
+
+1.14-对不原生支持比较操作的对象排序
+同样可以基于sorted的key参数来进行排序
+sorted(users, key=lambda u: u.user_id)
+# key参数接收一个可调用对象,可调用对象会返回待排序对象中的某值,如lambda u: u.user_id从对象中取出user_id属性作为可比较的依据
+sorted(users, key=itemgetter('user_id'))
+# 同样可以用itemgetter来实现
+# 是的,同样可以用于min和max函数
+
+1.15-根据字段将记录分组
+使用itertools模块的groupby函数可以方便地对字典或对象实例进行分组
+# 假设我们有一个字典列表,其中的每个字典都有date公共键,我们首先用itemgetter函数对字典列表进行排序
+from operator import itemgetter
+from itertools import groupby
+rows.sort(key=itemgetter('date'))
+for date, items in groupby(rows, key=itemgetter('date')):
+	print(date)
+	for i in items:
+		print(' ', i)
+# 然后接着用groupby函数接收排序后的字典列表与依据值,每次返回一个分组名与一个分组名下的字典列表,如
+07/01/2012
+	{'date': '07/01/2012'}
+	{'date': '07/01/2012'}
+# 实际上,groupby函数通过扫描序列找出拥有相同值(或者通过key参数指定的函数所返回的值)的序列项,并将它们分组
+# groupby创建了一个迭代器,每次迭代都会返回一个值与一个子迭代器,这个子迭代器可以产生所有在该分组内具有该值的项
+# 重要的是首先要根据所需的项对数据进行排序,groupby只能检查连续的项
+# 如果只是简单地根据日期将数据分组到一起,放到一个大的数据结构中以允许进行随机访问,利用defaultdict()构建一个一键多值字典会更好,例如:
+from collections import defaultdict
+rows_by_date = defaultdict(list)
+for row in rows:
+	rows_by_date[row['date']].append(row)
+# 然后给出所需的date键的值,rows_by_date使得我们可以方便地访问每个日期的记录,返回所有匹配该值的字典项
+
+1.16-筛选序列中的元素
+常见的方式是使用列表推导式
+[n for n in mylist if n > 0]
+也可以使用生成器表达式,这样不会产生一个庞大的结果集
+pos = (n for n in mylist if n > 0)
+for x in pos:
+	print(x)
+# 如同嵌套循环一样使用
+如果筛选条件过于复杂,可以使用函数加上内建的filter函数来处理
+def is_int(val):
+	try:
+		x = int(val)
+		return True
+	except ValueError:
+		return False
+	ivals = list(filter(is_int, values))
+	print(ivals)
+# filter函数创建了一个迭代器,用于过滤序列,过滤掉不符合条件的元素,返回由符合条件元素组成的新列表。
+# 接收两个参数,第一个为函数,第二个为序列,序列的每个元素作为参数传递给函数进行判断,然后返回True或False,最后将返回True的元素放到新列表中。
+# 因此这个列表如同进行了递归调用
+列表推导式和生成器表达式通常是用来筛选数据的最简单和最直接的方式,此外特具有同时对数据做转换的能力
+[math.sqrt(n) for n in mylist if n > 0]
+# 对列表里的每个数取平方根
+我还可以使用条件表达式来取得是就否那的操作
+[n if n > 0 else 0 for n in mylist]
+itertools模块的compress函数也是个不错的筛选工具
+from itertools import compress
+more5 = [n > 5 for n in counts]
+list(compress(addresses,more5))
+# 该函数接收一个可迭代对象与一个布尔选择器序列,挑选出满足布尔值为True的相应元素
+# 因此我们先用列表推导式创建出一个布尔值序列,使用函数筛选出正确的值
+
+1.17-从字典中提取子集
+使用字典推导式可以轻松解决,例如
+p1 = { key:value for key, value in preces.items() if value > 200 }
+# 取出字典中value大于200的键值对
+
+1.18-将名称映射到序列的元素中
+collections模块的namedtuple函数,即命名元组可以将名称映射到元组的元素上,以通过名称而不是下标来访问元组的值
+Subscriber = namedtuple('Subscriber', ['addr','joined'])
+sub = Subscriber('jonesy@example.com', '2012-10-19')
+# 首先用namedtuple函数传入一个类型名称与相应的字典实例化出一个类
+# 接着便可用传入参数后用sub.addr或者sub.joined读取相应的值
+# 虽然它看起来和普通的类实例差不多,但它的实例与普通的元组是可以互换的,而且支持普通元组所支持的所有操作,如索引和分解
+len(sub)
+addr, joined = sub
+# 主要作用在于将代码同它控制的元素位置间解耦
+还有一种可能用法是当做字典的替代,后者需要更多空间来存储。因此如果要构建涉及字典的大型数据结构,namedtuple会更加高效
+但namedtuple是不可变的,只能通过_replace方法来创建一个全新的命名元组
+s = s._replace(shares=75)
+
+1.19-同时对数据做转换和换算
+在函数参数中使用生成器表达式可以轻松做到,如
+s = sum(x * x for x in nums)
+还有例子如:
+import os
+files = os.listdir('dirname')
+if any(name.endswith('.py') for name in files):
+	print('There be python!')
+else:
+	print('Sorry, no python.')
+s = ('ACME', 50, 123.45)
+print(','.join(str(i) for i in s))
+# 基于生成器的解决方案可以以迭代的方式转换数据,在内存使用上要高效的多
+
+1.20-将多个映射合并为单个映射
+可以使用collections模块中的ChainMap类
+from collections import ChainMap
+c = ChainMap(a, b)
+# ChainMap类接受了两个有不同键的字典,并将这两个字典合并为单个字典
+# ChaiMap接受多个映射然后在逻辑上使它们表现为一个单独的映射结构。但是,这些映射在字面上并不会合并在一起
+# 它只是简单地维护一个记录底层映射关系的列表,然后重定义常见的字典操作来扫描这个列表,因此大部分对于字典的操作都能够使用在此类上
+len(c)
+list(c.keys())
+等等等等
+而如果有多个相同的键,这里会采用第一个映射中所对应的值,修改映射的操作也总是会作用在列出的第一个映射结构上
+ChainMap类与带有作用域的值一起工作时特别有用,如:
+values = ChainMap()
+values['x'] = 1
+values = values.new_child()
+values['x'] = 2
+# 这个ChainMap类保存的即为({'x':2},{'x':1}),每次读取x键时会显示2
+values = values.parents
+# 变成了({'x':1}),读取x键时变成了1
+使用字典的update方法也能将多个字典合并在一起
+merged = dict(b)
+merged.update(a)
+# 这样做需要单独构建一个完整的字典对象,同时它和ChaiMap类有很大差别。如果a或b的原始字典被修改,新的字典对象自然不会受到什么影响
+# 但在ChaiMap类中,因为它只是维护一个记录底层映射关系的列表,然后扫描这个列表,任何对原始字典的修改都会同样影响到该类

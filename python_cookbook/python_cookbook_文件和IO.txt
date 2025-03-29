@@ -1,0 +1,283 @@
+5.1-读写文本数据
+open加上rt、wt、at等参数可以读取文本数据,为了匹配不同的编码格式,给encoding形参指定编码方式即可进行不同的编码的读与写
+除了open语句,我们还可以使用一个with语句,它会创建一个上下文环境并打开文件,离开with语句块就会自动关闭文件
+需要注意的是unix和windows的换行符是不同的,即\n和\r\n。默认情况下python工作在通用型换行符模式下,常见的换行格式都能读取出来,并转换成一个单独的\n
+同样在输出时,\n会被转换成默认的换行符。如果不需要这种翻译行为,可以提供一个newline=''的参数
+
+5.2-将输出重定向到文件中
+with open('somefile.txt','rt') as f:
+	print('Hello World!', file=f)
+# 为print函数加上file形参指定文件对象即可,需要注意的是必须保证文件是以文本模式打开的
+
+5.3-以不同的分隔符或行结尾符完成打印
+print(1,2,3)默认会以空格分隔参数
+print(1,2,3,seq=',')更改默认以逗号分隔
+print(1,2,3,seq=',',end='!!\n')更改默认以逗号分隔并以!!\n分行
+我们还可以用join连接分隔符,但join需要序列中的元素都是字符串,如果有其他类型的参数即会报错,因此我们可以使用
+print(*row, seq=',')轻松解决问题
+
+5.4-读写二进制数据
+使用open或with的rb、wb、ab等模式即可实现对二进制数据的读写
+读取二进制数据时,所有的数据都以字节串的形式返回,而不是文本字符串。
+同样的,写入二进制数据时,数据必须以对象的形式来提供,而且该对象可以将数据以字节形式暴露出来
+而二进制数据与文本数据有一些微妙的差异
+在循环迭代中迭代文本字符串将会返回单字符,而迭代字节串将会返回代表该字节的整数值而不是单字符
+如果要从二进制文件中读取或写入文本内容,要进行编码或解码操作
+关于二进制I/O,像数组和C结构体这样的对象可以直接用来进行写操作,而不必先将其转换为byte对象
+这种行为可适用于任何实现了缓冲区接口的对象,该接口直接将对象底层的内存缓冲区暴露给可以在其上进行的操作
+有许多对象还支持直接将二进制数据读入到它们底层的内存中,只要使用文件对象的readinto方法
+
+5.5-对已不存在的文件执行写入操作
+使用x或者xb模式即可实现,该模式会首先检查在相应的目录中有无此文件,如果有则会返回False,或者返回文件描述符
+
+5.6-在字符串上执行I/O操作
+使用io.StringIO和io.BytesIO类分别对字符串与字节串进行I/O操作
+这两个类可以创建类似于文件的对象,这些对象从而可以操控字符串数据
+s = io.StringIO()
+s.write('Hello World\n')
+s.getvalue() # 输出其中的所有字符,不会解释非文本符号而是直接输出
+s.read(4) # 输出前四个字符
+s.read() # 指针到了第五个元素,会一次性输出除了前四个字符之后的所有字符
+# io.BytesIO可以对字节串做操作,使用方法同上
+
+5.7-读写压缩的数据文件
+python的gzip和bz2模块可以读写压缩文件
+import gzip
+import bz2
+with gzip.open('somefile.gz','rt') as f:
+	text = f.read()
+with bz2.open('somefile.gz','rt') as f:
+	text = f.read()
+# 处理二进制数据需要使用rb或wb模式,写入时可以在open函数内加入compresslevel参数指定压缩级别
+gzip和bz2还能对已经用二进制模式打开的文件进行叠加操作
+f = open('somefile.gz','rb')
+with gzip.open(f,'rt') as g:
+	text = g.read()
+# 这让该模块可以同各种类型的类文件对象比如套接字、管道和内存文件一起工作
+
+5.8-对固定大小的记录进行迭代
+使用iter和functools模块的partial来完成
+from functools import partial
+with open('somefile.data','rb') as f:
+	records = iter(partial(f,32),b'')
+	for r in records:
+		...
+# partial函数根据传入的参数每次调用取出指定数量的字节,iter函数使用可调用对象和一个哨兵值创建出一个迭代器
+# 此迭代器会重复调用可调用对象,直到返回的值为哨兵值,迭代过程便会停止
+
+5.9-将二进制数据读取到可变缓冲区中
+将二进制数据读取到可变缓冲区,中间不经过任何拷贝,对该可变缓冲区做操作从而可以原地修改二进制数据再写回到文件中
+使用os.path的readinto方法即可
+def read_into_buffer(filename):
+	buf = bytearray(os.path.getsize(filename))
+	with open(filename,'rb') as f:
+		f.readinto(buf)
+	return buf
+# 该函数传入一个文件字符串,os.path.getsize获取该文件的字节数,bytearray函数创建一个该字节数大小的数组
+# open以rb模式打开文件,用readinto将文件数据都读取到byte数组中并返回
+readinto方法可用来将数据填充到任何预分配好的数组中,这包括array模块或numpy这样的库所创建的数组
+和read方法不同的是,readinto方法是为已存在的缓存区填充内容,而不是分配新的对象再将它们返回
+因此可以用readinto来避免产生额外的内存分配动作,甚至可以使用内存映像对已存在的缓冲区做切片处理,中间不涉及任何拷贝操作,还能修改它的内容
+m1 = memoryview(buf)
+m2 = m1[-5:]
+m2[:] = b"WORLD"
+# buf的值将会变为Hello WORLD
+需要注意的是,使用readinto方法需要总是注意它返回的字节数,如果字节数小玉所提供的缓冲区大小,这可能表示数据被截断或者遭到了破坏
+
+5.10-对二进制文件做内存映射
+通过内存映射的方式将一个二进制文件加载到可变的字节数组中,这样可以随机访问其内容或者是实现就地修改
+mmap模块可以实现对文件的内存映射操作
+import os
+import mmap
+def memory_map(filename, access=mmap.ACCESS_WRITE):
+	size = os.path.getsize(filename)
+	fd = os.open(filename,os.O_RDWR)
+	return mmap.mmap(fd,size,access=access)
+# 该函数接受一个二进制文件名字符串,首先读取该文件的字节数
+# 使用os.open低级文件操作函数,并用os.O_RDWR标志表示以读写模式打开文件
+# 使用mmap函数创建文件的内存映射,分别是文件描述符、映射的大小以及访问模式
+# 默认是mmap.ACCESS_WRITE,即可读可写,对数据的任何修改都会拷贝到原始的文件中
+# 可以传入mmap.ACCESS_READ表示只读,也可以使用mmap.ACCESS_COPY表示只在本地修改,不把修改写回原始文件
+m = memory_map('data')
+# 现在我们可以像使用列表一样使用m数组,也可以调用close方法关闭文件,而不需像通常那样组合各种seek、read和write调用来访问
+要理解的是,对于某个文件进行内存映射并不会导致整个文件读到内存中。也就是说,这个文件不会拷贝到某种内存缓冲区或数组上
+相反,操作系统只是为文件保留一段虚拟内存,当访问文件的不同区域时,文件的这些区域将被读取并按照需要映射到内存区域中
+但是,文件种从未访问过的部分会简单地留在磁盘上。这一切都是以透明的方式在幕后完成的
+如果有多个python解释器对同一个文件做了内存映射,得到的mmap对象可用来在解释器之间交换数据,也就是说,所有的解释器可以同时读写数据
+在一个解释器对数据做出的修改会反映到另一个解释器中,但我们需要一些额外的步骤来处理同步问题,有时候可用这种方法作为通过管道或socket传输数据的替代方式
+
+5.11-处理路径名
+os.path模块中的函数可以处理各类路径名的问题
+os.path.basename(path)
+# 取出路径中的文件名
+os.path.dirname(path)
+# 取出路径中的目录名
+os.path.join(a,b,c)
+# 将输入参数组合成符合系统规范的路径名
+os.path.expanduser(path)
+# 将路径字符串中的~转换成用户家目录
+os.path.splitext(path)
+# 将路径分解成目录和文件
+
+5.12-检测文件是否存在
+os.path模块中的函数能够检查文件是否存在
+os.path.exists(path)
+# 检查路径是否存在,是则返回true
+os.path.isfile(path)
+# 检查文件是否是文件
+os.path.isdir(path)
+# 检查文件是否是目录
+os.path.islink(path)
+# 检查文件是否是链接文件
+os.path.realpath(path)
+# 获取文件的绝对路径或应用的真实路径(而非软连接)
+os.path.getsize(path)
+# 获取文件的大小
+os.path.getmtime(path)
+# 获取用户的最后修改日期
+
+5.13-获取目录内容的列表
+os模块的listdir函数会得到原始的目录文件列表,包括所有的文件、子目录、符号链接等
+而对于文件名进行匹配可以考虑使用glob模块或者fnmatch模块
+glob.glob('somedir/*.py')
+# 返回目录下的所有py文件
+pyfiles = [name for name in os.listdir('somedir') if fnmatch.fnmatch(name,'*.py')]
+# 通配符匹配文件名称
+os.stat(name)
+# 将会返回一个对象,里面保存了一系列有关于文件的信息
+
+5.14-绕过文件名编码
+默认情况下,所有的文件名都会根据sys.getfilesystemencoding()返回的文本编码形式进行编码和解码
+如果基于某种原因想忽略这种编码,可以使用原始字节串来指定文件名
+with open('jalape\xf1o.txt','w') as f:
+	f.write('Spicy!')
+import os
+os.listdir('.')
+# 返回工作目录下的所有文件,将会解释成默认编码形式
+os.listdir(b'.')
+# 返回工作目录下的所有文件,将文件名按原样返回,不解释编码,将会返回
+[b'jalapen\xcc\x83o.txt']
+# 可以看到同文件的相关函数提供字节串参数时,对文件名的处理就发生了微小的改变
+使用这种方式可以保证用户无法通过恶意的文件名导致处理大量文件的程序崩溃
+
+5.15-打印无法解码的文件名
+通常情况下,python程序都是按照默认编码形式进行编码的,但是某些文件系统不一定会强制执行这种编码约束
+因此会允许文件通过不恰当的编码方式来命名,这会导致程序错误
+一般的解决方法是,从文件名中取出一个无法解码的字节值\xhh,将其映射到一个"代理编码"中,代理编码由Unicode
+字符\udchh来表示。当执行通常的文件操纵时都不会产生问题,可一旦打印字符,程序就会报错。因此使用try except
+代码块再加上自定义处理函数即可正常处理,可以使用repr输出,也可以使用encode重新编码
+
+5.16-为已经打开的文件添加或修改编码方式
+为已经打开的二进制文件添加或修改编码方式,可以用io.TextIOWrapper()对象将其包装
+import urllib.request
+import io
+u = urllib.request.urlopen('http://www.python.org')
+f = io.TextIOWrapper(u,encoding='utf-8')
+text = f.read()
+# 用TextIOWrapper传入文件对象和指定的编码方式
+为已经打开的文本文件添加或修改编码方式
+import sys
+sys.stdout = io.TextIOWrapper(sys.stdout.detach(),encoding='latin-1')
+# detach方法将最上层的TextIOWrapper同文件分离,将下一层的BufferedWriter返回,移除已有的文本编码层,用新的编码方式代替
+
+5.17-将字节数据写入文本文件
+将字节数据写入到文件底层的buffer
+import sys
+sys.stdout.buffer.write(b'Hello\n')
+# 同样,我们也可以读取二进制数据,只要通过buffer属性来读取即可
+很明显,I/O系统是否不同的层次来构建的,文本文件是通过在缓冲的二进制模式文件之上添加一个Unicode编码/解码层构建
+buffer属性简单地指向底层的文件,如果访问该属性,就可以绕过文本编码/解码层,分层结构为
+io.TextIOWrapper 文本编码/解码层
+io.BufferedWriter 二进制缓冲区
+io.FileIO 最底层的文件描述符
+
+5.18-将已有的文件描述符包装为文件对象
+现在有一个以整数值表示的文件描述符,它已经同操作系统中打开的I/O通道建立了联系(即,文件、管道、socket等)。
+而我们希望用高级的python文件对象来包装这个描述符
+文件描述符与在程序中使用的文件对象有相当区别。文件描述符只是一个由操作系统分配的整数句柄,用来指代某种系统I/O
+要对这个句柄进行包装,open函数就可以简单做到,只要把整数形式的文件描述符作为第一个参数取代文件名就可以了
+import os
+fd = os.open('somefile.txt',os.O_WRONLY | os.O_CREAT)
+f = open(fd,'wt')
+f.write('hello world\n')
+f.close()
+# 当文件对象被销毁时,底层的文件描述符也会一并被关闭。如果不想要这种行为,只需要给open提供一个可选的closefd=False参数即可
+在UNIX系统上,这种包装文件描述符的技术可以用来方便地对以不同方式打开的I/O通道提供一个类似于文件的接口
+
+5.19-创建临时文件和目录
+tempfile模块中有各种函数可以来完成这个任务,要创建一个未命名的临时文件,可以使用tempfile.TemporaryFile
+with TemporaryFile('w+t') as f:
+	...
+# 可以像通常的文件对象一样使用这个临时文件,这个临时文件没有名字,如果想要让临时文件有名字,可以使用NameTemporaryFile来替代
+# 同时,这些文件会在关闭时自动删除,如果不想要这种行为,可以提供一个delete=False的参数
+创建临时目录可以使用TemporaryDirectory来实现
+with TemporaryDirectory() as dirname:
+	...
+# 创建一个临时目录,可以像使用正常的目录一样使用它
+如果要从较底的层次使用临时文件,可以使用mkstemp和mkdtemp来创建临时文件和目录
+tempfile.mkstemp()
+tempfile.mkdtemp()
+# 返回原始的操作系统文件描述符,需要自行将其转换为一个合适的文件,如果要将文件清理掉,也要由自己完成
+一般情况下,临时文件都在系统默认的区域中创建,比如var/tmp之类的地方,可以使用tempfile.gettempdir()函数找到实际的位置
+同时,所有同临时文件相同的函数都能用prefix、suffix、dir关键字参数来覆盖目录
+f = NameTemporaryFile(prefix='mytemp',suffix='.txt',dir='/tmp')
+f.name
+# 该临时文件因为参数改变为/tmp目录下的mytemp.txt文件
+需要注意的是,在可能的范围内,tempfile模块创建的临时文件都是以最安全的方式进行的,这包括只为当前用户提供可访问的权限
+并且在创建文件时采取了相应的步骤来避免出现竞态条件
+
+5.20-同串口进行通信
+通过串口读取和写入数据,典型情况下是同某种硬件设备进行交互
+可以通过内建的I/O来完成这个任务,但pySerial包更好,它用起来非常简单,如:
+import serial
+ser = serial.Serial('/dev/...',baudrate=9600,bytesize=8,parity='N',stopbits=1)
+# 像在超级终端配置一样,输入正确的参数,打开串口后便可使用read、readline和write调用来读写数据了
+
+5.21-序列化python对象
+将python对象序列化成字节流,这样就可以将其保存到文件中、存储到数据库中或者通过网络连接进行传输
+常见的做法是使用pickle模块,将某个对象转储到文件中
+import pickle
+data = ...
+f = open('somefile','wb')
+pickle.dump(data,f)
+# 这样就将一个对象转储到文件中了,如果要转储为字符串,可以使用dumps函数
+f = open('somefile','rb')
+data = pickle.load(f)
+data = pickle.loads(f)
+# 从字节流中重新创建出对象
+pickle是一种专有的自描述式数据编码,序列化的数据中包含有每个对象的开始和结束以及有关对象类型的信息
+因此,不需要担心应该如何定义记录,该模块自己就能完成,要处理多个对象,可以这样做
+import pickle
+f = open('somefile','wb')
+pickle.dump([1,2,3,4],f)
+pickle.dump('hello',f)
+pickle.dump({'Apple','Pear','Banana'},f)
+f.close()
+f = open('somefile','rb')
+pickle.load(f)
+...
+# 每次调用都会读取一个对象
+需要注意的是,当对数据做反序列化处理时,会假设所有所需的源文件都是可用的。模块、类以及函数会根据需要自动导入
+对于需要在不同机器上的解释器之间共享python数据的应用,这是一个潜在的维护性问题
+同时,绝对不能对非受信任的数据使用load,pickle会自动加载模块并创建实例,但攻击者可以故意创建出格式不正确的数据
+使得python解释器有机会去执行容易的系统命令
+以及,某些特定类型的对象是无法进行pickle操作的,这些对象一般都会涉及某种外部系统状态,比如打开的文件、打开的网络连接
+线程、进程、栈帧等。不过用户自定义的类有时候可以通过__getstate__和__setstate__方法规避限制。
+如果定义了这些方法,dump就会调用getstate得到一个可以被pickle处理的对象,在unpickle的时候就会调用setstate了,如:
+import time
+import threading
+class Countdown:
+	def __init__(self,n):
+		self.n = n
+		self.thr = threading.Thread(target=self.run)
+		self.thr.daemon = True
+		self.thr.start()
+	def run(self):
+		while self.n > 0:
+			print('T-minus',self.n)
+			self.n -= 1
+			time.sleep(5)
+	def __getstate__(self):
+		return self.n
+	def __setstate__(self,n):
+		self.__init__(n)

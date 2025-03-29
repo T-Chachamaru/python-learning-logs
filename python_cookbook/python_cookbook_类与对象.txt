@@ -1,0 +1,652 @@
+8.1-修改实例的字符串表示
+要修改实例的字符串表示,可通过定义__str__和__repr__方法来实现
+class Pair:
+	def __init__(self,x,y):
+		self.x = x
+		self.y = y
+	def __repr__(self):
+		return 'Pair({0.x!r}, {0.y!r})'.format(self)
+	def __str__(self):
+		return '({0.x!s}, {0.y!s})'.format(self)
+# 特殊方法__repr__返回的是实例的代码表示,通常可以用它返回的字符串文本来重新创建这个实例。当缺少交互式解释环境时可用来检查实例的值
+obj == eval(repr(obj))
+# __str__将实例转换为一个字符串,这也是由str和print所产生的输出,如
+>>> p = Pair(3,4)
+>>> p
+Pair(3,4)
+>>> print(p)
+(3,4)
+# 特殊格式化!r可表示用__repr__来输出,而不是默认的__str__
+
+8.2-自定义字符串的输出格式
+在类中定义__format__方法
+_formats = {
+	'ymd' : '{d.year}-{d.month}-{d.day}',
+	'mdy' : '{d.month}/{d.day}/{d.year}',
+	'dmy' : '{d.day}/{d.month}/{d.year}'
+}
+class Date:
+	def __init__(self,year,month,day):
+		self.year = year
+		self.month = month
+		self.day = day
+	def __format__(self,code):
+		if code = '':
+			code = 'ymd'
+		fmt = _formats[code]
+		return fmt.format(d=self)
+		
+8.3-让对象支持上下文管理协议
+要让对象能够兼容with,需要实现__enter__和__exit__方法,比如,我们实现一个表示网络连接的类
+from socket import socket,AF_INET,SOCK_STREAM
+class LazyConnection:
+	def __init__(self,address,family=AF_INET,type=SOCK_STREAM):
+		self.address = address
+		self.family = AF_INET
+		self.type = SOCK_STREAM
+		self.sock = None
+	def __enter__(self):
+		if self.sock is not None:
+			raise RuntimeError('...')
+		self.sock = socket(self.family,self.type)
+		self.sock.connect(self.address)
+		return self.sock
+	def __exit__(self,exc_ty,exc_val,tb):
+		self.sock.close()
+		self.sock = None
+		
+# 这个类可通过with语句自动打开与关闭网络连接
+这个网络连接类只能同时打开一个网络连接,将sock改成队列,在enter方法中加入connections append
+把exit方法改成connections pop close就能实现一个工厂类,队列像栈一样使用
+
+8.4-当创建大量实例时如何节省内存
+对那些主要用作简单数据结构的类,通常可以在类定义中增加__slot__属性,以此来大量减少对内存的使用
+class Date:
+	__slots__ = ['year','month','day']
+	def __init__(self,year,month,day):
+		self.year = year
+		self.month = month
+		self.day = day
+# 当采用__slots__属性时,python会针对实例采用一种更加紧凑的内部表示,不再让每个实例都创建一个__dict__字典
+# slots中列出的属性名会在内部映射到这个数组的特定索引上,但副作用是无法再添加新的属性,只允许使用slots列出的属性名
+
+8.5-将名称封装到类中
+在属性或方法名前加上_的实现被认为是内部实现
+__的实现会导致出现名称重整的行为,这样的属性不能通过继承而覆盖
+
+8.6-创建可管理的属性
+要自定义如何对属性进行访问,可以使用定义property,即将类中定义的属性当做属性的一种来使用,如
+class Person:
+	def __init__(self,first_name):
+		self.first_name = first_name
+	@property
+	def first_name(self):
+		return self.first_name
+	@first_name.setter
+	def first_name(self,value):
+		if not isinstance(value,str):
+			raise TypeError('Expected a string')
+		self._first_name = value
+	@first_name.deleter
+	def first_name(self):
+		raise AttributeError("Can't delete attribute")
+# 这个类将first_name定义为了property属性,将两个方法附加到了该属性上,根据不同的访问方式,将会触发不同的方法,比如
+a.first_name = 44
+触发setter的报错
+del a.first_name
+触发deleter的报错
+property属性实际上就是把一系列的方法绑定到一起,如果检查类的property属性就会发现property自身所持有的属性fget、fset和fdel所代表的原始方法
+但我们不会直接去调用fget或者fset,访问property属性的时候会自动触发对这些方法的调用,只有需要完成一些额外的处理方法时才应该使用property属性的方法
+
+8.7-调用父类的方法
+调用一个已经被子类覆盖的父类方法可使用super函数完成,如super().__setattr__(name,value)
+而调用父类的方法来进行初始化也最好使用super函数来完成,它会自动处理重复初始化的问题
+这和实现继承的方法有用,对于每一个被定义的类,python都会计算出一个称为方法解析顺序(MRO)的列表,该列表简单地对所有基类进行线性排序
+它使用一种C3线性化处理的技术,依次检查子类后是父类,而有多个父类时则按照MRO列表的顺序依次检查,如果出现了两个合法的选择,就从第一个父类中选取
+因此,super调用方法甚至可以将两个不同的类方法组合起来,如定义两个不同的类
+class A:
+	def spam(self):
+		print('A.spam')
+		super().spam()
+class B:
+	def spam(self):
+		print('B.spam')
+class C(A,B):
+	...
+# 调用c的spam时,除了输出A.spam外还会输出B.spam,这代表着两个名称相同的spam方法关联了起来。在定义混合类的时候,会以这种方法使用super
+
+8.8-在子类中扩展属性
+使用property属性即可继承属性后再扩展属性的绑定方法,如
+class SubPerson(Person):
+	@property
+	def name(self):
+		print('Getting name')
+		return super().name # 这是父类的property属性
+	@name.setter
+	def name(self,value):
+		print('...')
+		super(SubPerson,SubPerson).name.__set__(self,value)
+# 这样就可以在子类中扩展property属性的绑定方法,super(SubPerson,SubPerson)可以将控制流传递到之前定义的name属性的__set__方法中去
+# 它以类变量的方式去访问。如果只想改变一个方法,去除@property直接使用@name.setter就好,而这种方法同样可以用来扩展描述符
+
+8.9-创建一种新形式的类属性或实例属性
+如果想创建一种新形式的实例属性,可以使用描述符类的形式定义功能
+class Integer:
+	def __init__(self,name):
+		self.name = name
+	def __get__(self,instance,cls):
+		if instance is None:
+			return self
+		else:
+			return instance.__dict__[self.name]
+	def __set__(self,instance,value):
+		if not isinstance(value,str):
+			raise TypeError('Expected an int')
+		isinstance.__dict__[self.name] = value
+	def __delete__(self,instance):
+		del instance.__dict__[self.name]
+# 实现三个核心的属性访问操作,可以通过接受类实例作为输入来工作。底层的实例字典会根据需要适当地进行调整
+# 要使用描述符,可以把描述符的实例放置在类的定义中作为类变量来用
+class Point:
+	x = Integer('x')
+	y = Integer('y')
+	def __init__(self,x,y):
+		self.x = x
+		self.y = y
+# 这样,所有针对描述符属性的访问都会被定义的描述符方法所捕获
+
+8.10-让属性具有惰性求值的能力
+将一个只读的属性定义为property属性方法,只有在访问它时才参与计算。一但访问了该属性,就把计算出的值缓存起来,不需要每次访问时都重新计算
+最有效的方式是利用描述符类来实现
+class lazyproperty:
+	def __init__(self,func):
+		self.func = func
+	def __get__(self,instance,cls):
+		if instance is None:
+			return self
+		else:
+			value = self.func(instance)
+			setattr(instance,self.func.__name__,value)
+			return value
+# 可以用装饰器在另一个类中使用这个描述符类,该类可以将计算结果缓存起来,每次调用从缓存中读取结果
+# 它会将结果值保存在实例字典中,而以property属性作为键名称。因此,要删除结果值也应该del的是实例名.property属性名
+# 但该结果值在创建出来之后都会成为可变的,如果需要考虑可变性的问题,可以使用另外一种实现
+
+8.11-简化数据结构的初始化过程
+通常可以将初始化的数据结构步骤归纳到一个单独的__init__函数中,并将其定义在一个公共的基类里,例如:
+class Structure:
+	_fields = []
+	def __init__(self,*args):
+		if len(args) != len(self._fields):
+			raise TypeError('Expected {} arguments'.format(len(self._fields)))
+		for name,value in zip(self._fields,args):
+			setattr(self,name,value)
+if __name__ = '__main__':
+	class Stock(Structure):
+		_fields = ['name','shares','price']
+	class Point(Structure):
+		_fields = ['x','y']
+	class Circle(Structure):
+		_fields = ['radius']
+		def area(self):
+			return math.pi * self.radius ** 2
+# Structure类定义了一个专门用来初始化的__init__,这个基类可被继承,并用_fields属性作为约束,实现方便的初始化
+# 而如果要增加对关键字参数的支持,则需要在初始化的__init__形参内加上**kwargs,并用
+for name in self._fields[len(args):]:
+	setattr(self,name,kwargs.pop(name))
+# 兼容关键字参数
+
+8.12-定义一个接口或抽象基类
+使用ABC模块可以定义抽象基类
+import abc import ABCMeta,abstractmethod
+class IStream(metaclass=ABCMeta):
+	@abstractmethod
+	def read(self,maxbytes=-1):
+		pass
+	@abstractmethod
+	def write(self,data):
+		pass
+# 抽象基类的核心特征就是不能被实例化,如果尝试这么做,会得到错误的提示。相反,抽象基类是用来给其他的类当做基类使用的,这些子类需要实现基类中要求的那些方法
+# 如定义了一个SocketStream的子类继承了IStream,就需要实现基类中定义的read和write方法才行
+# 因此,抽象基类的主要用途是强制规定所需的编程接口。例如,一种看待IStream基类的方式就是在高层次上指定一个接口规范,使其允许读取和写入数据
+
+8.13-实现一种数据模型或类型系统
+要实现一种类型系统,需要对每个属性做定制化处理,使用描述符来完成,如
+class Descriptor:
+    def __init__(self, name=None, **opts):
+        self.name = name
+        for key, value in opts.items():
+            setattr(self, key, value)
+    def __set__(self, instance, value):
+        instance.__dict__[self.name] = value
+class Typed(Descriptor):
+    expected_type = type(None)
+    def __set__(self, instance, value):
+        if not isinstance(value, self.expected_type):
+            raise TypeError('expected ' + str(self.expected_type))
+        super().__set__(instance, value)
+class Unsigned(Descriptor):
+    def __set__(self, instance, value):
+        if value < 0:
+            raise ValueError('Expected >= 0')
+        super().__set__(instance, value)
+class MaxSized(Descriptor):
+    def __init__(self, name=None, **opts):
+        if 'size' not in opts:
+            raise TypeError('missing size option')
+        super().__init__(name, **opts)
+    def __set__(self, instance, value):
+        if len(value) >= self.size:
+            raise ValueError('size must be < ' + str(self.size))
+        super().__set__(instance, value)
+# 这些类可作为构建一个数据模型或者类型系统的基础组件
+class Integer(Typed):
+    expected_type = int
+# 定义一个限制为整数的类型系统
+class UnsignedInteger(Integer, Unsigned):
+    pass
+# 增加限制,这个整数类型系统只能是正数
+class Float(Typed):
+    expected_type = float
+# 定义一个限制为浮点数的类型系统
+class UnsignedFloat(Float, Unsigned):
+    pass
+# 增加限制,这个浮点数类型系统只能是正数
+class String(Typed):
+    expected_type = str
+class SizedString(String, MaxSized):
+    pass
+# 接着,我们可以用这些类型对象来定义一个类
+class Stock:
+    name = SizedString('name', size=8)
+    shares = UnsignedInteger('shares')
+    price = UnsignedFloat('price')
+    def __init__(self, name, shares, price):
+        self.name = name
+        self.shares = shares
+        self.price = price
+# 现在,我们对属性进行赋值是会进行验证的。这让我们实现了像是C或者C++这种需要提前定义变量类型的语言特性
+# 我们还可以使用类装饰器来简化在类中设定约束的步骤
+def check_attributes(**kwargs):
+    def decorate(cls):
+        for key, value in kwargs.items():
+            if isinstance(value, Descriptor):
+                value.name = key
+                setattr(cls, key, value)
+            else:
+                setattr(cls, key, value(key))
+        return cls
+    return decorate
+@check_attributes(name=SizedString(size=8),
+                  shares=UnsignedInteger,
+                  price=UnsignedFloat)
+class Stock:
+    def __init__(self, name, shares, price):
+        self.name = name
+        self.shares = shares
+        self.price = price
+		
+8.14-实现自定义的容器
+collections库中定义了许多抽象基类,实现自定义的容器时可以调用它们,比如
+import collections
+class A(collections.Iterable):
+	pass
+# 从collections中继承Iterable,让我们的类可以支持迭代操作
+# 继承Iterable的好处是它让我们必须实现所有必须的方法才能实例化,否则便会报错
+# 关于其他的抽象基类,可以去看collections的手册
+
+8.15-委托属性的访问
+委托是一种编程模式,将某个特定的操作转交给另一个不同的对象实现,比如
+class A:
+    def spam(self, x):
+        pass
+    def foo(self):
+        pass
+class B1:
+    def __init__(self):
+        self._a = A()
+    def spam(self, x):
+        # Delegate to the internal self._a instance
+        return self._a.spam(x)
+    def foo(self):
+        return self._a.foo()
+    def bar(self):
+        pass
+# 这是最简单的委托形式,B1类将执行委托给A类进行
+# 但如果有许多方法都需要委托,另一个实现方法是定义__getattr__方法,在B1后方加入
+def __getattr__(self,name):
+	return getattr(self._a,name)
+# getattr方法能用来查找所有的属性,如果代码中尝试访问一个并不存在的属性,就会调用这个方法,从而将未定义的方法委托给A类执行
+# 因此,定义__getattr__、__setattr__、__delattr__加上以上方法可以轻松实现一个代理类
+
+8.16-在类中定义多个构造函数
+使用类方法
+import time
+class Date:
+	def __init__(self,year,month,day):
+		self.year = year
+		self.month = month
+		self.day = day
+	@ classmethod
+	def today(cls):
+		t = time.localtime()
+		return cls(t.tm_year,t.tm_mon,t.tm_mday)
+# today是备选的构造函数
+
+8.17-不通过调用init来创建实例
+可以使用__new__方法来创建一个未初始化的实例
+class Date:
+	def __init__(self,year,month,day):
+		self.year = year
+		self.month = month
+		self.day = day
+d = Date.__new__(Date)
+# 绕过了__init__方法来创建实例,因此几个属性都没有值,访问会报错。我们可以使用setattr函数来额外赋值
+
+8.18-用Mixin技术来扩展类定义
+我们有一个很有用的方法想要给所有类都添加上去,但是这些类不一定都具有继承关系,因此我们要把这些方法定义到一个共同的基类上,如
+class LoggedMappingMixin:
+    __slots__ = ()
+    def __getitem__(self, key):
+        print('Getting ' + str(key))
+        return super().__getitem__(key)
+    def __setitem__(self, key, value):
+        print('Setting {} = {!r}'.format(key, value))
+        return super().__setitem__(key, value)
+    def __delitem__(self, key):
+        print('Deleting ' + str(key))
+        return super().__delitem__(key)
+class SetOnceMappingMixin:
+    __slots__ = ()
+    def __setitem__(self, key, value):
+        if key in self:
+            raise KeyError(str(key) + ' already set')
+        return super().__setitem__(key, value)
+class StringKeysMappingMixin:
+    __slots__ = ()
+    def __setitem__(self, key, value):
+        if not isinstance(key, str):
+            raise TypeError('keys must be strings')
+        return super().__setitem__(key, value)
+# 这些类没有实际意义,通常都是用来和其他映射类使用多重继承的方法混合在一起使用,比如
+class LoggedDict(LoggedMappingMixin,dict):
+	pass
+# 把这些mixin与其他已有的类混合在一起,共同提供工作所需的功能
+
+8.19-实现带有状态的对象或状态机
+让对象可以在不同的状态中进行操作,但并不想出现大量的条件判断,通常,网络连接是状态机实现的好去处
+class Connection:
+    def __init__(self):
+        self.state = 'CLOSED'
+    def read(self):
+        if self.state != 'OPEN':
+            raise RuntimeError('Not open')
+        print('reading')
+    def write(self, data):
+        if self.state != 'OPEN':
+            raise RuntimeError('Not open')
+        print('writing')
+    def open(self):
+        if self.state == 'OPEN':
+            raise RuntimeError('Already open')
+        self.state = 'OPEN'
+    def close(self):
+        if self.state == 'CLOSED':
+            raise RuntimeError('Already closed')
+        self.state = 'CLOSED'
+# 这样写的执行效率会变低,更好的办法是为每个状态定义一个对象
+class Connection1:
+    def __init__(self):
+        self.new_state(ClosedConnectionState)
+    def new_state(self, newstate):
+        self._state = newstate
+    def read(self):
+        return self._state.read(self)
+    def write(self, data):
+        return self._state.write(self, data)
+    def open(self):
+        return self._state.open(self)
+    def close(self):
+        return self._state.close(self)
+class ConnectionState:
+    @staticmethod
+    def read(conn):
+        raise NotImplementedError()
+    @staticmethod
+    def write(conn, data):
+        raise NotImplementedError()
+    @staticmethod
+    def open(conn):
+        raise NotImplementedError()
+    @staticmethod
+    def close(conn):
+        raise NotImplementedError()
+class ClosedConnectionState(ConnectionState):
+    @staticmethod
+    def read(conn):
+        raise RuntimeError('Not open')
+    @staticmethod
+    def write(conn, data):
+        raise RuntimeError('Not open')
+    @staticmethod
+    def open(conn):
+        conn.new_state(OpenConnectionState)
+    @staticmethod
+    def close(conn):
+        raise RuntimeError('Already closed')
+class OpenConnectionState(ConnectionState):
+    @staticmethod
+    def read(conn):
+        print('reading')
+    @staticmethod
+    def write(conn, data):
+        print('writing')
+    @staticmethod
+    def open(conn):
+        raise RuntimeError('Already open')
+    @staticmethod
+    def close(conn):
+        conn.new_state(ClosedConnectionState)
+# 这样,根据不同的状态就会切换到不同的对象。另外一种方法就是使用__class__属性来获取新状态
+
+8.20-调用对象上的方法,方法名以字符串的形式给出
+简单的情况可以用getattr函数
+d = getattr(p,'distance')(0,0)
+# 调用p实例的distance并传入0,0参数
+另一个方法是使用operator.methodcaller
+operator.methodcaller('distance',0,0)(p)
+
+8.21-实现访问者模式
+我们需要编写代码来处理或遍历一个由许多不同类型的对象组成的复杂数据结构,每种类型的对象处理的方式都不相同
+如果能够让处理过程变得通用,一种常见的解决方案就是实现"访问者模式"
+class Node:
+    pass
+class UnaryOperator(Node):
+    def __init__(self, operand):
+        self.operand = operand
+class BinaryOperator(Node):
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+class Add(BinaryOperator):
+    pass
+class Sub(BinaryOperator):
+    pass
+class Mul(BinaryOperator):
+    pass
+class Div(BinaryOperator):
+    pass
+class Negate(UnaryOperator):
+    pass
+class Number(Node):
+    def __init__(self, value):
+        self.value = value
+class NodeVisitor:
+    def visit(self, node):
+        methname = 'visit_' + type(node).__name__
+        meth = getattr(self, methname, None)
+        if meth is None:
+            meth = self.generic_visit
+        return meth(node)
+    def generic_visit(self, node):
+        raise RuntimeError('No {} method'.format('visit_' + type(node).__name__))
+class Evaluator(NodeVisitor):
+    def visit_Number(self, node):
+        return node.value
+    def visit_Add(self, node):
+        return self.visit(node.left) + self.visit(node.right)
+    def visit_Sub(self, node):
+        return self.visit(node.left) - self.visit(node.right)
+    def visit_Mul(self, node):
+        return self.visit(node.left) * self.visit(node.right)
+    def visit_Div(self, node):
+        return self.visit(node.left) / self.visit(node.right)
+    def visit_Negate(self, node):
+        return -node.operand
+# NodeVisitor基类提供通用节点访问逻辑,根据节点类型动态调用对应的visit方法,如果子类没有实现visit方法则抛出异常
+# Evaluator子类实现具体求值方法,并递归计算求值,如
+# Representation of 1 + 2 * (3 - 4) / 5
+t1 = Sub(Number(3), Number(4))
+t2 = Mul(Number(2), t1)
+t3 = Div(t2, Number(5))
+t4 = Add(Number(1), t3)
+e = Evaluator()
+e.visit(t4)
+# visit方法获取t4对象的类名,并从当前方法中搜索是否存在可用的visit方法,如果是加减乘除,则继续递归调用对象,最终还原出1 + 2 * (3 - 4) / 5并计算返回
+class StackCode(NodeVisitor):
+    def generate_code(self, node):
+        self.instructions = []
+        self.visit(node)
+        return self.instructions
+    def visit_Number(self, node):
+        self.instructions.append(('PUSH', node.value))
+    def binop(self, node, instruction):
+        self.visit(node.left)
+        self.visit(node.right)
+        self.instructions.append((instruction,))
+    def visit_Add(self, node):
+        self.binop(node, 'ADD')
+    def visit_Sub(self, node):
+        self.binop(node, 'SUB')
+    def visit_Mul(self, node):
+        self.binop(node, 'MUL')
+    def visit_Div(self, node):
+        self.binop(node, 'DIV')
+    def unaryop(self, node, instruction):
+        self.visit(node.operand)
+        self.instructions.append((instruction,))
+    def visit_Negate(self, node):
+        self.unaryop(node, 'NEG')
+# 实现堆栈机翻译,模拟指令序列
+
+8.22-实现非递归的访问者模式
+递归态的访问者模式会因为有可能达到python的深度限制而崩溃,因此需要实现不使用递归的访问者模式
+使用生成器和堆栈可以实现非递归的访问者模式
+class NodeVisitor:
+    def visit(self, node):
+        stack = [node]
+        last_result = None
+        while stack:
+            try:
+                last = stack[-1]
+                if isinstance(last, types.GeneratorType):
+                    stack.append(last.send(last_result))
+                    last_result = None
+                elif isinstance(last, Node):
+                    stack.append(self._visit(stack.pop()))
+                else:
+                    last_result = stack.pop()
+            except StopIteration:
+                stack.pop()
+        return last_result
+    def _visit(self, node):
+        methname = 'visit_' + type(node).__name__
+        meth = getattr(self, methname, None)
+        if meth is None:
+            meth = self.generic_visit
+        return meth(node)
+    def generic_visit(self, node):
+        raise RuntimeError('No {} method'.format('visit_' + type(node).__name__))
+class Evaluator(NodeVisitor):
+    def visit_Number(self, node):
+        return node.value
+    def visit_Add(self, node):
+        yield (yield node.left) + (yield node.right)
+    def visit_Sub(self, node):
+        yield (yield node.left) - (yield node.right)
+    def visit_Mul(self, node):
+        yield (yield node.left) * (yield node.right)
+    def visit_Div(self, node):
+        yield (yield node.left) / (yield node.right)
+    def visit_Negate(self, node):
+        yield - (yield node.operand)
+# 用stack作为显式栈,last_result保存子表达式结果,yield返回生成器并运行暂停、恢复的逻辑,从而实现完全不需要递归使用的访问者模式
+
+8.23-在环状数据结构中管理内存
+用weakref中的弱引用机制可以很好地处理环状数据结构中循环引用的问题
+import weakref
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self._parent = None
+        self.children = []
+    def __repr__(self):
+        return 'Node({!r:})'.format(self.value)
+    # property that manages the parent as a weak-reference
+    @property
+    def parent(self):
+        return None if self._parent is None else self._parent()
+    @parent.setter
+    def parent(self, node):
+        self._parent = weakref.ref(node)
+    def add_child(self, child):
+        self.children.append(child)
+        child.parent = self
+		
+8.24-让类支持比较操作
+要让类可以实现比较操作需要分别为每个比较操作符实现比较方法,可以用functools.total_ordering装饰器简化这个过程
+from functools import total_ordering
+class Room:
+    def __init__(self, name, length, width):
+        self.name = name
+        self.length = length
+        self.width = width
+        self.square_feet = self.length * self.width
+@total_ordering
+class House:
+    def __init__(self, name, style):
+        self.name = name
+        self.style = style
+        self.rooms = list()
+    @property
+    def living_space_footage(self):
+        return sum(r.square_feet for r in self.rooms)
+    def add_room(self, room):
+        self.rooms.append(room)
+    def __str__(self):
+        return '{}: {} square foot {}'.format(self.name,
+                self.living_space_footage,
+                self.style)
+    def __eq__(self, other):
+        return self.living_space_footage == other.living_space_footage
+    def __lt__(self, other):
+        return self.living_space_footage < other.living_space_footage
+# 使用@total_ordering,仅需实现__eq__和__lt__
+
+8.25-创建缓存实例
+当创建类实例时想返回一个缓存引用,让其指向上一个用同样参数(如果有)创建出的类实例
+一种方法是使用一个与类本身相分离的工厂函数
+class Spam:
+    def __init__(self, name):
+        self.name = name
+import weakref
+_spam_cache = weakref.WeakValueDictionary()
+def get_spam(name):
+    if name not in _spam_cache:
+        s = Spam(name)
+        _spam_cache[name] = s
+    else:
+        s = _spam_cache[name]
+    return s
+# 用weakref.WeakValueDictionary()创建一个弱引用字典,get_spam判断是否命中缓存
+# 也可以把这些实现当做不同的组件合并到一个管理类中

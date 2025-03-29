@@ -1,0 +1,241 @@
+4.1-手动访问迭代器中的元素
+使用next手动访问可迭代对象中的元素,自己捕获处理StopIteration异常。也可以通知next函数在迭代结束时返回特定的值,如
+next(f,None)
+我们还可以用iter函数获取对象的迭代器并返回用来给next函数使用,并检查可迭代对象是否有下一个值
+iter函数返回的迭代器如果对象相同,则无论返回几个都是同一个可迭代对象的迭代器,如
+iter1 = iter(mylist)
+iter2 = iter(mylist)
+# 无论next函数使用iter1还是iter2都会让迭代对象指向下一个值
+
+4.2-委托迭代
+我们构建了一个自定义的容器对象,其内部持有一个可迭代对象,接下来我们想让自己的新容器能够完成迭代操作
+我们可以在对象内部定义一个__iter__方法,用来返回迭代器,如
+class Node:
+	def __init__(self,value):
+		self._value = value
+		self._children = []
+	def __repr__(self):
+		return 'Node({!r})'.format(self._value)
+	def add_child(self,node):
+		self._children.append(node)
+	def __iter__(self):
+		return iter(self._children)
+
+if __name__=='__main__':
+	root = Node(0)
+	child1 = Node(1)
+	child2 = Node(2)
+	root.add_child(child1)
+	root.add_child(child2)
+	for ch in root:
+		print(ch)
+# 这个类的iter方法将迭代请求转发给对象内部持有的_children属性上
+# 我们使用的iter(s)函数也是调用s.__iter__()来简单地返回底层的迭代器,这和len(s)调用s.__len__()方法是一样的
+
+4.3-用生成器创建新的迭代模式
+要自定义一种新的迭代模式,可以使用生成器函数来实现
+def frange(start, stop, increment):
+	x = start
+	while x < stop:
+		yield x
+		x += increment
+# 该函数定义了一种新的迭代模式,可产生某个范围内的浮点数
+只要是函数中使用了yield关键字,就会使函数成为生成器函数,它只会在响应迭代操作时才运行
+即我们进行一次调用c = countdown(3)的调用
+c只等于一个迭代器对象,而并不是yield返回的值
+只有next(c)从迭代器中一个个取出元素时才会运行,for等循环语句也是利用next执行的,只不过它们已经封装了这些细节
+
+4.4-实现迭代协议
+我们有一个自定义的对象,希望它可以支持迭代操作,也希望它能有一种简单的方式来实现迭代协议
+最简单的方式使用生成器函数,我们在4.2节用Node类来表示树结构,现在可以实现一个迭代器能够以深度优先的模式遍历树的节点
+class Node:
+	def __init__(self,value):
+		self._value = value
+		self._children = []
+	def __repr__(self):
+		return 'Node({!r})'.format(self._value)
+	def add_child(self,node):
+		self._children.append(node)
+	def __iter__(self):
+		return iter(self._children)
+	def depth_first(self):
+		yield self
+		for c in self:
+			yield from c.depth_first()
+
+if __name__=='__main__':
+	root = Node(0)
+	child1 = Node(1)
+	child2 = Node(2)
+	root.add_child(child1)
+	root.add_child(child2)
+	child1.add_child(Node(3))
+	child1.add_child(Node(4))
+	child2.add_child(Node(5))
+	for ch in root.depth_first:
+		print(ch)
+# 该实例的depth_first函数首先产生出自身,然后迭代每个子节点,利用子节点的depth_first方法的yield from将可迭代对象中的元素
+# 一个个地yield出来,产生出其他元素。同样,利用yield的这种特性,可以让我们使用协程来实现并发编程
+python的迭代协议要求__iter__方法返回一个特殊的迭代器对象,该对象必须实现__next__方法。并使用StopIteration异常
+来通知迭代的完成,但这样常常会比较繁琐。我们可以使用另外一种实现,创建一个相关联的迭代器类
+将以上类的depth_first方法改成return DepthFirstIterator(self)
+class DepthFirstIterator(object):
+	def __init__(self,start_node):
+		self._node = start_node
+		self._children_iter = None
+		self._child_iter = None
+	def __iter__(self):
+		return self
+	def __next__(self):
+		if self._children_iter is None:
+			self._children_iter = iter(self._node)
+			return self._node
+		elif self._child_iter:
+			try:
+				nextchild = next(self._children_iter)
+				return nextchild
+			except StopIteration:
+				self._child_iter = None
+				return next(self)
+		else:
+			self._children_iter = next(self._children_iter).depth_first()
+			return next(self)
+# 迭代器类的工作方式和生成器版本实现相同但却复杂了很多,迭代器必须维护迭代过程中许多复杂的状态,要记住跌打进行到哪里了
+
+4.5-反向迭代
+实现内建的reversed函数即可实现反向迭代
+a = [1,2,3,4]
+for x in reversed(a):
+	...
+# 反向迭代列表a
+反向迭代只有待处理的对象拥有可确定的大小。或者对象实现了__reversed__特殊方法时才能奏效,如果这两个对象都无法满足
+则需要首先将这个对象转换为列表
+f = open('file')
+for line in reversed(list(f)):
+	...
+我们在类中实现了__reversed__方法即可在自定义的类上实现反向迭代
+class Countdown:
+	def __init__(self,start):
+		self.start = start
+	def __iter__(self):
+		n = self.start
+		while n > 0:
+			yield n
+			n += 1
+	def __reversed__(self):
+		n = 1
+		while n <= self.start:
+			yield n
+			n += 1
+# 定义一个反向迭代器可使代码变得更加高效,这样就像无需先把数据放到列表中再反向去迭代列表,节省了很多的内存利用
+
+4.6-定义带有额外状态的生成器函数
+创建一个类,在其中定义__iter__方法
+class linehistory:
+	def __init__(self, lines, histlen=3):
+		self.lines = lines
+		self.history = deque(maxlen=histlen)
+	def __iter__(self):
+		for lineno, line in enumerate(self.lines,1):
+			self.history.append((lineno,line))
+			yield line
+	def clear(self):
+		self.history.clear()
+# 该类可以看成一个普通的生成器函数,我们可以用它来实现自定义的迭代协议,也可以通过访问其中的属性寻找它的额外状态
+
+4.7-对迭代器做切片操作
+itertools.islice函数可以对生成器或迭代器做切片操作,如
+我们创建了一个生成器函数count
+c = count(0)
+直接使用c[10:20]将会报错
+导入itertools模块的islice函数
+for x in itertools.islice(c, 10, 20):
+	print(x)
+# 迭代器和生成器是无法执行普通的切片操作的,islice函数产生的结果也只是一个副迭代器,这是通过访问并丢弃所有起始索引之前的元素来实现的
+# 由于迭代器中的元素只能访问一次,如果之后还需要倒回去访问前面的数据,应该先把数据放到列表中
+
+4.8-跳过可迭代对象中的前一部分元素
+itertools模块的dropwhile函数和islice函数都可以实现需求
+dropwhile函数只要提供一个函数和一个可迭代对象即可,该函数返回的迭代器会丢弃掉序列中前面几个元素,筛选掉我们不需要的元素
+例如,我们想要读取一个文件,开头有一系列注释行,而我们需要丢弃它们
+from itertools import dropwhile
+with open('/etc/passwd') as f:
+	for line in dropwhile(lambda line: line.startswith('#'), f):
+		...
+# 该例子通过测试函数的结果来跳过前面的元素,如果恰好知道要跳过多少元素,可以使用islice函数
+
+4.9-迭代所有可能的组合或排列
+itertools的permutations函数接受一个元素集合,将其中的元素重排列为所有可能的情况,并以元组序列的形式返回
+from itertools import permutations
+for p in permutations(items):
+	print(p)
+# 如果想要得到较短长度的全排列,可以给permutations传入第二个整数参数
+combinations函数也可以产生输入序列中所有元素的全部组合形式,使用方法与permutations函数相同
+但对该函数来说,元素之间的实际顺序是不考虑的,也就是(a,b)被认为与(b,a)相同
+combinations_with_replacement函数解放了该限制,允许相同的元素得到多次选择
+
+4.10-以索引-值对的形式迭代序列
+enumerate函数可以解决这个问题,比如要打印出规范的行号
+for idx, val in enumerate(my_list, 1):
+	...
+# 这将会记录每个迭代对象的索引并返回它
+word_summary = defaultdict(list)
+with open('myfile.txt', 'r') as f:
+	lines = f.readlines()
+for idx,line in enumerate(lines):
+	words = [w.strip().lower() for w in line.split()]
+	for word in words:
+		word_summary[word].append(idx)
+# 处理完之后,word_summary将得到一个字典,每个单词都是字典的键。每个单词键所对应的值就是由行号组成的列表
+# 如果一个单词在一行之中出现过两次,那么这个行号就会记录两次,这使得我们可以识别出文本中各种简单的规律
+
+4.11-同时迭代多个序列
+使用zip函数来同时进行多个迭代,如
+for x,y in zip(a,b)
+# zip的原理是创建出一个迭代器,该迭代器会产生出元组(x,y)。但其中某个输入序列中没有元素可以继续迭代时,整个迭代过程结束
+# 因此整个迭代的长度和其中最短的输入序列长度相同
+如果这种迭代长度的限制不是所需要的,可以使用itertools模块的zip_longest函数来替代
+zip_longest函数的使用方法和zip一样,但它迭代的长度是最长的输入序列长度。如果某个序列的元素已经迭代完了,将会产生None值来替代
+zip也通常用来将不同的数据配在一起,dict(zip())是经典的组合
+
+4.12-在不同的容器中进行迭代
+我们正在对很多对象执行相同的迭代操作,可以用itertools模块的chain方法来掩盖细节,让代码拥有更多的可读性
+for x in chain(a,b)
+# chain函数接受多个对象参数,它将会按顺序一一迭代提供的对象中的元素并返回
+
+4.13-创建处理数据的管道
+我们有海量的数据需要处理,但却没法完全将数据加载到内存中去,生成器函数便是实现管道机制的好方法
+例如,我们有一个超大的目录,其中都是想要处理的日志文件,文件中是网站的访问日志
+要处理这种文件,我们可以定义一系列小型的生成器函数,每个函数执行特定的任务,如
+def gen_find(filepat,top):
+	...
+# 用通配符寻找目录下所有匹配的文件名并拼接成完整路径后用yield返回
+def gen_opener(filenames):
+	...
+# 读取目录文件,检查后缀名,根据后缀名的不同用不同的格式打开并用yield返回
+def gen_concatenate(iterators):
+	for it in iterators:
+		yield from it
+# 遍历输入的迭代器序列,逐个处理每个迭代器,用yield from将当前迭代器逐个展开,生成文件的所有行
+def gen_grep(patten, lines):
+	...
+# 接受一个正则表达式字符串与查找行,找到相应字符串的位置
+
+4.14-扁平化处理嵌套型的序列
+yield from委托生成即可实现递归调用,处理嵌套迭代器,参见如前的yield from使用示例
+
+4.15-合并多个有序序列,再对整个有序序列进行迭代
+有很多种方式可以合并序列,但heapq模块的merge函数性能更好,它对所有提供的序列都不会做一次性读取。
+意味着我们可以利用它处理非常长的序列,而开销非常小
+for c in heapq.merge(a,b):
+	...
+# merge要求所有的输入序列都是有序的,它不会将所有的数据读取到堆中,或者预先做任何的排序操作
+# 也不会对输入做任何验证,检查是否满足有序的要求。它只是简单地检查每个输入序列中的第一个元素,将最小的那个发送出去
+# 然后再从之前选择的序列读取一个新的元素,再重复执行这个步骤,直到元素耗尽
+
+4.16-用迭代器取代while循环
+在I/O处理中使用迭代器取代while循环可以处理某些不常见的测试条件
+def reader(s):
+	for chunk in iter(lambda: s.recv(8192), b''):
+		...
+# iter可以接受一个无参的可调用对象和一个结束值作为输入,然后重复调用提供的可调用对象,直到遇到结束值而结束

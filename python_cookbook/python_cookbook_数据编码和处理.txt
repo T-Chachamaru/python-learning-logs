@@ -1,0 +1,263 @@
+6.1-读写CSV数据
+大部分类型的CSV数据都可以用CSV库来搞定
+import csv
+with open('stocks.csv') as f:
+	f_csv = csv.reader(f)
+	headers = next(f_csv)
+	for row in f_csv:
+		...
+# headers获取标头,f_csv每次迭代返回一个元组,该元组为一行上的值的集合,CSV用逗号分隔值
+也可以用命名元组更好地表示
+from collections import namedtuple
+with open('stocks.csv') as f:
+	f_csv = csv.reader(f)
+	headings = next(f_csv)
+	Row = namedtuple('Row',headings)
+	for r in f_csv:
+		row = Row(*r)
+		...
+# 这样就可以使用每一列的标头row.Symbol和row.Change来取代之前的索引
+另一种可行的方式是将数据读取为字典序列
+with open('stocks.csv') as f:
+	f_csv = csv.DictReader(f)
+	for row in f_csv:
+		...
+# 这样可以使用行标头row['Symbol']和row['Change']
+写入csv数据,也可以使用csv模块来完成
+with open('stocks.csv','w') as f:
+	f_csv = csv.writer(f)
+	f_csv.writerow(headers)
+	f_csv.writerow(rows)
+如果数据是字典序列,可以这样处理
+with open('stocks.csv','w') as f:
+	f_csv = csv.DictWriter(f,headers)
+	f_csv.writeheader()
+	f_csv.writerows(rows)
+
+6.2-读写JSON数据
+json模块提供了简单的方法来编码和解码JSON格式的数据,主要是json.dumps()和json.loads()
+import json
+data = {
+	'name':'ACME',
+	'shares':100,
+	'price':542.23
+}
+json_str = json.dumps(data)
+# 将python数据结构转换为JSON
+data = json.loads(json_str)
+# 将json字符串转换为python数据结构
+如果是同文件而不是字符串打交道的话,可以选择使用json.dump以及json.load来编码和解码json数据
+with open('data.json','w') as f:
+	json.dump(data,f)
+with open('data.json','r') as f:
+	data = json.load(f)
+JSON编码支持的数据类型有None、bool、int、float和str。还有包含了这些数据类型的列表、元组以及字典
+对于字典,JSON会把键定义为字符串。而想创建其他类型的对象,可以为json.loads方法提供object_pair_hook或者object_hook参数
+from collections import OrderedDict
+data = json.loads(s,object_pairs_hook=OrderedDict)
+# 将JSON数据解码为OrderedDict,即有序字典
+class JSONObject
+	def __init__(self,d):
+		self.__dict__ = d
+	...
+data = json.loads(s,object_hook=JSONObject)
+# 将JSON字典转变为python对象
+类一般是无法序列化为JSON的,如果想,可以提供一个函数将类实例作为输入并返回一个可以被序列化处理的字典
+def serialize_instance(obj):
+	d = { '__classname__' : type(obj).__name__}
+	d.update(vars(obj))
+	return d
+如果想取回一个实例,可以这样
+def unserialize_object(d):
+	clsname = d.pop('__classname__',None)
+	if clsname:
+		cls = classes[clsname]
+		obj = cls.__new__(cls)
+		for key,value in d.items():
+			setattr(obj,key,value)
+			return obj
+	else:
+		return d
+
+6.3-解析简单的XML文档
+xml.etree.ElementTree模块可用来从简单的XML文档中提取数据,假设想对planet python上的RSS订阅做解析并生成一个总结报告
+from urllib.request import urlopen
+from xml.etree.ElementTree import parse
+u = urlopen('http://planet.python.org/rss20.xml')
+doc = parse(u)
+for item in doc.iterfind('channel/item'):
+	title = item.findtext('title')
+	date = item.findtext('pubDate')
+	link = item.findtext('link')
+# parse函数将整个XML文档解析为一个文档对象,之后就可以用find、iterfind、findtext方法查询特定的XML元素,这些函数的参数就是特定的标签名称
+# 当指定标签时,需要考虑文档的结构。每一个查找操作都是相对于一个起始元素来展开的,提供给每个操作的标签名也是相对于起始元素的
+
+6.4-以增量方式解析大型XML文件
+任何以增量方式处理数据的问题,都要考虑迭代器和生成器,如
+from xml.etree.ElementTree import iterparse
+def parse_and_remove(filename,path):
+	path_parts = path.split('/')
+	doc = iterparse(filename,('start','end'))
+	next(doc)
+	tag_stack = []
+	elem_stack = []
+	for event,elem in doc:
+		if event == 'start':
+			tag_stack.append(elem.tag)
+			elem_stack.append(elem)
+		elif event == 'end':
+			if tag_stack == path_parts:
+				yield elem
+				elem_stack[-2].remove(elem)
+			try:
+				tag_stack.pop()
+				elem_stack.pop()
+			except IndexError:
+				pass
+# iterparse方法允许我们对XML文档做增量式的处理,只需要提供文件名和一个事件列表即可
+# 创建出的迭代器产生出形式为(event,elem)的元组,event是列出的事件,而elem是对应的xml元素
+# elem_stack[-2].remove(elem)使得通过yield产生出的元素从它们的父节点中移除,元素被销毁进而可以回收它所占用的内存
+
+6.5-将字典转换为XML
+xml.etree.ElementTree库通常用来解析XML文档,但也可以用来创建XML文档
+from xml.etree.ElementTree import Element
+def dict_to_xml(tag,d):
+	elem = Element(tag)
+	for key,val in d.items():
+		child = Element(key)
+		child.text = str(val)
+		elem.append(child)
+	return elem
+# 将输入的字典转换为XML文档,键作为元素,值作为元素值,返回Element实例
+该库内的tostring函数可以将Element实例转换为字节串
+tostring(Element)
+还可以用Element实例的set方法为元素附加上属性
+
+6.6-解析、修改和重写XML
+xml.etree.ElementTree库可以完成这样的任务,用parse和Elment
+doc = parse('pred.xml')
+root = doc.getroot()
+root.remove(root.find('sri'))
+list(root.index(root.find('nm')))
+e = Element('spam')
+e.text = 'This is a test'
+root.insert(2,e)
+doc.write('newpred.xml',xml_declaration=True)
+# parse解析返回一个ElementTree对象表示XML文档结构
+# getroot方法获取XML文档的根元素,也就是XML最顶层的标签,让root指向它
+# root在自己所表示的标签下查找第一个名为sri的元素并移除它,用find和remove
+# 用list将返回root所有直接子元素的列表,而index则让它返回第一个nm标签的位置
+# Element创建一个新的XML元素,并设置text属性的值,接着在root中插入它
+# 各自doc的write将修改后的XML树写入新文件
+修改XML文档的结构非常简单,但所有的修改主要是对父元素进行的,把它当做一个列表那样对待
+例如,如果想要移除某个元素,就用remove方法,插入或添加,用insert和append方法,也可以使用索引和切片来操控
+
+6.7-用命名空间来解析XML文档
+包装一个通用类
+class XMLNamespaces:
+	def __init__(self,**kwargs):
+		self.namespace = {}
+		for name,uri in kwargs.items():
+			self.register(name,uri)
+	def register(self,name,uri):
+		self.namepaces[name] = '{'+uri+'}'
+	def __call__(self,path):
+		return path.format_map(self.namespace)
+对包含有命名空间的XML文档进行解析非常繁琐,我们可以创建一个类在辅助解析来简化这个过程,但在基本的ElementTree库
+中不存在什么机制能够获得有关命名空间的进一步消息,如果确实想要操作,建议使用lxml库
+
+6.8-同关系型数据库进行交互
+python中表达行数据的标准方式是采用元组序列,不同的数据库API有相似的用法,标准的API是sqlite3
+import sqlite3
+db = sqlite3.connect('database.db')
+# 传入数据库名称、主机名、用户名、密码等参数连接数据库
+c = db.cursor()
+c.execute('...')
+db.commit()
+# 创建一个游标,使用execute方法操作数据库,commit方法提交更改
+如果执行的查询操作需要接受用户的输入参数,需要用?隔开参数
+c.execute('...?',(min_price,))
+
+6.9-编码和解码十六进制数字
+binascii模块可以把字符串解码为字节流,或者把字节流编码为十六进制数
+binascii.b2a_hex(s)
+# 将一个字节串编码为十六进制数并返回它
+binascii.a2b_hex(h)
+# 将一个十六进制数解码为字节串
+base64模块的b16encode和b16decode函数也能做到,但只能对大写形式的十六进制数进行操作
+因此,对于一个字节串,而我们想把它转换成一个字符串,可以这样
+h = base64.b16encode(s)
+print(h.decode('ascii'))
+# b16encode将字节串编码为十六进制数,decode将十六进制数解码为字符串
+
+6.10-base64编码和解码
+base64模块的b64encode和b64decode函数可以对二进制数据做编码解码操作
+但只能用在面向字节的数据上,参考上节
+
+6.11-读写二进制结构的数组
+使用struct模块
+from struct import Struct
+def write_records(records,format,f):
+	record_struct = Struct(format)
+	for r in records:
+		r.write(record_struct.pack(*r))
+if __name__='__main__':
+	records = [...] # 一个元组列表
+	with open('data.b','wb') as f:
+		write_records(records,'<idd',f)
+# 此函数将元组写入到二进制文件中
+如果要把这个文件重新读取为一列python元组,可以用几种不同的方式来实现
+按块增量:
+...
+def read_records(format,f):
+	record_struct = Struct(format)
+	chunks = iter(lambda: f.read(record_struct.size),b'')
+	return (record_struct.unpack(chunk) for chunk in chunks)
+if __name__ == '__main__':
+	with open('data.b','rb') as f:
+		for rec in read_records('<idd',f):
+			...
+# 将文件重新解码读取为元组
+整件读取:
+...
+def unpack_records(format,data):
+	record_struct = Struct(format)
+	return (record_struct.unpack_from(data,offset) for offset in range(0,len(data),record_struct.size))
+if __name__ = '__main__':
+	with open('data.b','rb') as f:
+		data = f.read()
+	for rec in unpack_records('<idd',data):
+		...
+# 整个读取二进制文件后再解码
+对于那些必须用二进制数据编码和解码的程序,用struct模块就可以办到。该模块的结构总是通过一组结构化代码定义,如i、d、f等
+这些代码同特定的二进制数据相对应,表示诸如32位浮点数、32位整数等等。而<则指定是大端序还是小端序,又或是!网络字节序
+Struct实例有多种属性和方法,其中size属性包括以字节为单位的结构体大小,pack和unpack方法用来打包和解包数据
+
+6.12-读取嵌套型和大小可变的二进制结构
+读取复杂的二进制编码数据,诸如图片、视频等
+struct模块几乎可以用来处理任何类型的二进制数据结构,假设我们有这么一个数据结构用来表示一系列的三角形
+polys = [
+			[(1.0,2.5),(3.5,4.0),(2.5,1.5)],
+			[(7.0,1.2),(5.1,3,0),(0.5,7.5),(0.8,9.0)],
+			[(3.4,6.3),(1.2,0.5),(4.6,9.2)],
+		]
+现在将这份数据编码为一个二进制文件,文件头这样表示
+字节    类型    描述
+0      int     文件代码(0x1234,小端)
+4      double  x的最小值(小端)
+12     double  y的最小值(小端)
+20     double  x的最大值(小端)
+28     double  y的最大值(小端)
+36     int     三角形数量(小端)
+文件头后的是一系列的三角形记录
+字节    类型    描述
+0      int     记录长度(N字节)
+4-N    Points  (X,Y)坐标,以浮点数表示
+---没看懂,之后回来重看这章---
+
+6.13-数据汇总和统计
+对于任何涉及统计、时间序列以及其他相关技术的数据分析问题,都应该使用Pandas库
+它的基本用法非常直观
+import pandas
+rats = pandas.read_csv('rats.csv',skip_footer=1)
+# 这样就可以查看该csv文件内的数据了

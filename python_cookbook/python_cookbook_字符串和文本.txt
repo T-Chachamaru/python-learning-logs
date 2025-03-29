@@ -1,0 +1,228 @@
+2.1-针对任意多的分隔符拆分字符串
+使用re.split方法能够切分有多种不同分隔符的字符串
+如一个字符串里有;,空格,我们可以利用正则表达式的[]符号
+re.split(r'[;,\s]\s*', line)
+# 这个正则表达式表现为,匹配一个字符,然后后面接0个或多个空格
+re.split(r'(;|,|\s)\s*', line)
+# 如果用捕获符则也会返回被切割的符号,如果想要使用分组又不想返回分割符,在分组的开头加上?:
+
+2.2-在字符串开头或结尾处做文本匹配
+用字符串的startswith方法和endswith方法就可以了
+如果包含多种可能,只需给方法提供包含可能选项的元组即可
+
+2.3-利用shell通配符做字符串匹配
+在unix shell下工作时,我们可以使用fnmatch模块的fnmatch函数和fnmatchcase可用来执行这样的匹配
+fnmatch('foo.txt','?oo.txt')
+# 调配符匹配,成功则返回Ture,此匹配不区分大小写
+fnmatchcase('foo.txt','*.TXT')
+# 区分大小写
+
+2.4-文本模式的匹配和查找
+如果只是匹配简单的文字,使用字符串的find、endswith、startswith方法就可以做好。其中find方法接收字符串,返回匹配字符串的下标
+而对于更复杂的匹配则需要正则表达式和re模块
+re.match(r'\d+/\d+/\d+', text)
+# 如这个match方法则匹配11/27/2021这样的时间格式,但它只做一次匹配
+datepat = re.compile(r'\d+/\d+/\d+')
+datepat.match(text)
+# 首先预编译一个模式对象,然后使用该模式对象匹配可将一个模式多次使用,但match方法只尝试在开头找到匹配,匹配一次后便返回True或者False
+datepat.findall(text)
+# findall方法找到所有匹配,并返回匹配的字符串的列表
+datepat = re.compile(r'(\d+)/(\d+)/(\d+)')
+# 我们还可以引入捕获组,捕获组除了匹配开头并返回字符串之外,还按组别把返回的字符串拆分,例如:
+# 11/27/2012可以通过group(0)读取整个匹配字符串,(1)读取11,(2)读取27,(3)读取2012,groups读取整个捕获组的字符串列表
+datepat.findall(text)
+# findall使用捕获组则匹配全文,返回全文的捕获组,finditer则可以以迭代的方式找出全文的匹配项
+
+2.5-查找和替换文本
+对于简单的字符串,使用replace方法即可进行查找替换
+而针对更为复杂的模式,可以用re模块中的sub函数/方法,如
+re.sub(r'(\d+)/(\d+)/(\d+)', r'\3-\1-\2', r'Tody is 11/27/2012. PyCon starts 3/13/2013.')
+# 其中的日期表示被转换成xxxx-xx-xx的形式。类似于\3这样的反斜线加数字表示捕获组中的数量,\3就是表示第三个捕获组
+# 如果想要重复用替换模式,依然需要使用compile方法进行预编译
+对于更加复杂的情况,可以指定一个替换回调函数
+from calendar import month_addr
+def change_date(m):
+	mon_name = month_addr[int(m.group(1))]
+	return '{} {} {}'.format(m.group(2), mon_name, m.group(3))
+datepat.sub(change_date, text)
+# 替换回调函数的输入参数是一个匹配对象,由match或find返回。用group方法来提取匹配中的特定部分
+newtext, n = datepat.subn(r'\3-\1-\2', text)
+# subn方法除了进行全局替换外,还返回替换了几次
+
+2.6-以不区分大小写的方式对文本做查找和替换
+在使用re模块时对各种操作都加上flags=re.IGNORECASE参数。正则匹配将不会再区分大小写。
+但这种简单的替换,替换文本与匹配文本的大小写并不吻合,即UPPER PYTHON替换成java会变成UPPER java而不是UPPER JAVA
+这个时候我们就可以使用到支撑函数
+def matchcase(word):
+	def replace(m):
+		text = m.group()
+		if text.isupper():
+			return word.upper()
+		elif text.islower():
+			return word.lower()
+		elif text[0].isupper():
+			return word.capitalize()
+		else:
+			return word
+	return replace
+re.sub('python', matchcase('shake'), text, flags=re.IGNORECASE)
+
+2.7-定义实现最短匹配的正则表达式
+当我们使用正则对文本模式进行匹配时,正则表达式采用贪心策略,识别出来的都是最长的可能匹配
+在*或+号后添加?会将算法调整为寻找最短的可能匹配
+
+2.8-编写多行模式的正则表达式
+我们想对一段文本块做匹配,但.正则操作符并不会匹配换行符,因此我们可以手动添加对换行符的支持
+comment = re.compile(r'/\*((?:.|\n)*?)\*/')
+# 这段匹配模式中,?:.|\n指定了一个非捕获组,即,这个组只做匹配但不捕获结果,也不会分配组号
+# compile函数也可以接受一个标记re.DOTALL,使得正则中的句点可以匹配所有的字符,也包括换行符
+
+2.9-将Unicode文本统一表示为规范形式
+我们在同Unicode字符串打交道,但需要确保所有的字符串都拥有相同的底层表示
+可以用unicodedata模块完成对不同形式字符的规范化
+import unicodedata
+t1 = unicodedata.normalize('NFC', s1)
+t2 = unicodedata.normalize('NFD', s2)
+# normalize的第一个参数指定了字符串应该如何完成规范表示。NFC表示字符应该是全组成的,即,如果可能的话就使用单个代码点
+# NFD表示应该使用组合字符,每个字符应该是能完全分解开的
+# unicodedata模块还能用来检测字符是否属于某个字符类别。combining函数可对字符做检查,判断它是否为一个组合型字符
+对文本进行过滤和净化的时候,规范化同样占据了重要的部分
+
+2.10-用正则表达式处理Unicode字符
+默认情况下re模块已经对Unicode字符有了足够的认知,\d已经可以匹配任意Unicode数字字符了
+而我们仍可以在模块字符串中包含指定的Unicode字符,使用相应转义序列
+arabic = re.compile('[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]+')
+# 该模式可匹配多个不同的阿拉伯代码页中所有的字符
+在执行搜索和匹配操作时,应该首先将所有的文本都统一表示为标准形式,但仍需要注意一些特殊情况。但不区分大小写的匹配和大写转换匹配联合起来时
+可能会因为编码混乱而造成文本乱码。
+
+2.11-从字符串中去掉不需要的字符
+strip、lstrip、rstrip等方法能够从字符串的两边、左边、右边去掉指定的字符
+对字符串中间的空格或要去除的字符做操作，应该使用replace方法或sub正则替换
+我们还有可能将去除字符的操作同某些迭代操作结合起来，比如说从文本中读取文本行。这个时候使用生成器表达式很方便
+lines = (line.strip() for line in f)
+
+2.12-文本过滤和清理
+简单的过滤与清理可以使用upper和lower等方法将文件转换成标准格式,简单的替换操作也可以用replace和sub来完成,它们把重点放在移除或修改特定的字符序列上
+也可以使用normalize来规范化文本
+而如果要更进一步,清除整个范围内的字符,去掉音符标志,可以使用translate方法,例如：
+s = 'python\fis\tawersome\r\n'
+remap = {ord('\t'):' ', ord('\f'):' ', ord('\r'):None}
+# 首先建立一个小型的转换表
+a = s.translate(remap)
+# 然后使用translate方法并将转换表传入参数,移除不需要的字符
+利用这种思想,我们可以构建更大的转换表,用dict.fromkeys方法将每个组合字符都映射为None
+用normalize方法将原始输入转换为分离字符
+再用translate加上转换表把组合字符全部转为None,可以这样做到非常干净方便的清理过滤
+-
+还有一种方法可以通过normalize把原始输入做分解,然后用encode和decode修改或清理文本
+不过,一般操作越简单,运行得也就越快,简单的字符串替换和清理用replace方法能够快速方便地做到
+
+2.13-对齐文本字符串
+基本的字符串对齐要求可以用ljust、rjust、center等方法做到,format函数也可以轻松完成对齐的任务
+而要格式化多个值时,使用format方法相当方便,它不特定于字符串,能作用于任何值
+我们还可以使用%操作符来进行格式化,但format方法比%号更通用
+
+2.14-字符串连接及合并
+使用join方法能够很快递合并连接字符串,+操作符也能够做一些简单的连接
+字符串连接看起来简单,但很多人都会在这个问题上做出错误的选择,使得代码性能受到限制
+如s = ''
+for p in parts:
+	s += p
+比使用join方法要慢上很多,主要因为每个+=操作都会创建一个新的字符串对象
+而将字符串连接同I/O操作混合起来的时候更需要对应用进行仔细分析
+是使用f.write(a + b)
+还是使用f.write(a)
+f.write(b)
+取决于使用的数据,如果a和b的数据很小,连接后再调用一次I/O的性能更好,执行一次I/O的固有开销很高
+而如果数据很大,那么分别调用I/O更加搞笑,这避免了创建大的临时结果.也可以对大块内存进行拷贝
+
+2.15-给字符串中的变量名做插值处理
+使用format方法可以近似模拟
+s = '{name} has {n} message.'
+s.format(name='Guido', n=37)
+也能用format_map方法与vars联合使用
+name = 'Guido'
+n = 37
+s.format_map(vars())
+vars函数还能作用在类上,它返回对象的属性和属性值的字典对象
+-
+他们都有一个缺点,那就是无法方便地处理缺少某个值的情况,避免出现这种情况的方法是单独定义一个带有__missing__方法的字典类
+class safesub(dict):
+	def __missing__(self, key):
+		return '(' + key + ')'
+s.format_map(safesub(vars()))
+这样如果缺少了一个变量,依然不会报错,而是将变量名原样输出
+-
+而如果在代码中常常需要执行这些步骤,可以将替换变量的过程隐藏在一个小型的功能函数内,可以使用sys._getframe函数获得函数的栈帧信息
+def sub(text):
+	return text.format_map(safesub(sys._getframe(1).f_locals))
+name = 'Guido'
+print(sub('Hello {name}'))
+输出Hello Guido
+我们还能使用
+' % {name} % {n}' % vars()
+或Template的形式,但format和format_map的方法比它们都更现代化,而且现在我们还有了f""形式
+
+2.16-以固定的列数重新格式化文本
+可用textwrap模块重新格式化文本的输出。
+textwrap模块的fill函数接受一个字符串参数与一个整数参数,将字符串的列限制为整数的参数并重新返回修改后的字符串
+os模块的get_terminal_size函数能获取终端的尺寸大小,用做参数信息来更好地格式化字符串
+
+2.17-我文本中处理HTML和XML实体
+使用html模块的escape函数能够把输入的HTML字符串里的元素解码成原始字符,而给quote参数传进False可以只解码符号
+如果要生成ASCII文本,并且想针对非ASCII字符将它们对应的字符编码实体嵌入到文本中,可以同各种I/O相关函数中使用errors='xmlcharrefreplace'参数
+s.encode('ascii', errors='xmlcharrefreplace')
+# 把字符串s的非ASCII码字符还原成原始字符编码
+而要替换文本中的实体,一般我们可以使用一个合适的HTML和XML解析器,手工想替换掉一些带有实体的文本可以使用HTML模块的parser.HTMLParser函数
+也可以使用xml模块的sax.saxutils.unescape函数
+
+2.18-文本分词
+我们有一个字符串,想从左到右将它解析为标记流。想要对字符串做分词处理不仅仅只是匹配模式,还要有某种方法来识别出模式的类型
+我们可以使用正则表达式的命名捕获组来实现,如下:
+NAME = r'(?P<NAME>[a-zA-Z_][a-zA-Z_0-9]*)'
+NUM = r'(?P<NUM>\d+)'
+...
+master_pat = re.compile('|'.join([NAME, NUM...]))
+# 使用命名捕获组匹配不同的模式,对文本进行分词。?P<TOKENNAME>这样的约定用来将名称分配给该模式
+scanner = master_pat.scanner('foo = 42')
+# 接下来使用scanner方法来完成分词操作,该方法会创建一个扫描对象,在给定的文本中重复调用match(),一次匹配一个模式
+# 接着使用match方法,调用_.lastgroup和_.group即可获取分词组
+# 可以轻松把这种方法包含在一个生成器函数中使用
+
+2.19-编写一个简单的递归下降解析器
+我们需要根据一组语法规则来解析文本,以此执行相应的操作或构建一个抽象语法树来表示输入。语法规则很简单,因此我们倾向于自己编写解析器而不是使用某种解析器框架
+要做到这些,应该以BNF或EBNF形式定义出语法的正式规格
+expr ::= expr + term
+	 | expr - term
+	 | term
+term ::= term * factor
+	 | term / factor
+	 | factor
+factor ::= { expr }
+	   | NUM
+# BNF形式可以简单理解为规则替换或取代的一种规范形式,左侧的符号可以被右侧的符号所取代,反之亦然。
+# 一般我们会尝试将输入的文本同语法做匹配,通过BNF来完成各种替换和扩展
+expr ::= term { (+|-) term }*
+term ::= factor { (*|/) factor }*
+factor ::= ( expr )
+	 | NUM
+# 在EBNF中,部分包括在{...}*中的规则是可选的,*意味着零个或更多重复项
+简单递归下降解析器代码——
+python代码本身也是通过一个递归下降解析器来解释的,可以检查python源代码的Grammar文件一探究竟
+对于真正复杂的语法解析,最好还是使用PyParsing或PLY这样的解析工具,我们只需要以一种更高层的方式定义规则
+对于如何实现解析器与编译器,也可以看看python的ast模块
+
+2.20-在字节串上执行文本操作
+字节串已经支持大多数和文本字符串一样的内建操作,如[]切片,split,startwitch等方法
+这些操作在字节数组上也能完成
+我们还可以在字节串上执行正则表达式的模式匹配操作,如:
+data = b'FOO:BAR,SPAM'
+re.split('b[:,]',data)
+就大部分情况而言,几乎所有能在文本字符串上执行的操作同样也可以在字节串上进行。但依然有几个显著的区别
+a = 'Hello'
+# a[0]是H
+a = b'Hello'
+# a[0]是72
+其次,字节串没有一个好的字符串表示,打印时会带上b'',可以对字节串调用decode('ascii')解码成文本字符串
+字节串同样也没有字符串那样的格式化操作,如果想在字节串上做任何形式的格式化操作,应该先用普通的文本字符串再用encode编码
