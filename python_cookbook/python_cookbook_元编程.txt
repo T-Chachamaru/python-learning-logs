@@ -1,0 +1,726 @@
+9.1-给函数添加一个包装
+使用装饰器函数对函数作包装,添加额外的处理
+import time
+from functools import wraps
+def timethis(func):
+	@wraps(func)
+	def wrapper(*args,**kwargs):
+		start = time.time()
+		result = func(*args,**kwargs)
+		end = time.time()
+		print(func.__name__,end-start)
+		return result
+	return wrapper
+# 用wraps保留func的名称、文档等元数据
+@timethis
+def countdown(n):
+	while n > 0:
+		n -= 1
+# timethis装饰了countdown,给它添加了start = time.time()和end = time.time()这种额外行为
+# 计算result = func(*args,**kwargs)的返回时间以确定运行效率,并用print(func.__name__,end-start)输出
+
+9.2-编写装饰器时如何保存函数的元数据
+每当定义一个装饰器时,应当总是记得为底层的包装函数添加functools库中的@wraps装饰器,如上节所示
+而要监视结果函数的元数据,可以调用__name__、__doc__、__annotations__等内置方法输出,其中一个非常重要的特性是
+可以调用__wrapped__(10000)来直接访问底层被包装的函数而且不需要经过装饰器的添加
+
+9.3-对装饰器进行解包装
+已经将一个函数装饰了,但想撤销这种装饰,访问未经包装的那个原始函数,可以使用上节提到的__wrapped__
+需要注意的是,要谨慎对经过多重装饰的函数使用__wrapped__
+
+9.4-定义一个可接受参数的装饰器
+from functools import wraps
+import logging
+def logged(level, name=None, message=None):
+    def decorate(func):
+        logname = name if name else func.__module__
+        log = logging.getLogger(logname)
+        logmsg = message if message else func.__name__
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            log.log(level, logmsg)
+            return func(*args, **kwargs)
+        return wrapper
+    return decorate
+# Example use
+@logged(logging.DEBUG)
+def add(x, y):
+    return x + y
+@logged(logging.CRITICAL, 'example')
+def spam():
+    print('Spam!')
+# 编写一个这样的可接受参数的装饰器需要一些技巧,这会涉及底层的调用顺序。具体来说,如果
+@decorate(x,y,z)
+def func(a,b):
+	pass
+# 它的调用顺序是这样的
+def func(a,b):
+	pass
+func = decorate(x,y,z)(func)
+# decorate(x,y,z)的结果必须是一个可调用对象,这个对象反过来接受一个函数作为输入,并对其进行包装,如return decorate
+
+9.5-定义一个属性可由用户修改的装饰器
+可以引入访问器函数来实现
+from functools import wraps, partial
+import logging
+def attach_wrapper(obj, func=None):
+    if func is None:
+        return partial(attach_wrapper, obj)
+    setattr(obj, func.__name__, func)
+    return func
+def logged(level, name=None, message=None):
+    def decorate(func):
+        logname = name if name else func.__module__
+        log = logging.getLogger(logname)
+        logmsg = message if message else func.__name__
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            log.log(level, logmsg)
+            return func(*args, **kwargs)
+        # Attach setter functions
+        @attach_wrapper(wrapper)
+        def set_level(newlevel):
+            nonlocal level
+            level = newlevel
+        @attach_wrapper(wrapper)
+        def set_message(newmsg):
+            nonlocal logmsg
+            logmsg = newmsg
+        return wrapper
+    return decorate
+# Example use
+@logged(logging.DEBUG)
+def add(x, y):
+    return x + y
+@logged(logging.CRITICAL, 'example')
+def spam():
+    print('Spam!')
+# 这段代码使用访问器函数动态地调整日志行为,并用nonlocal关键字使其能够访问外部变量,如
+>>> import logging
+>>> logging.basicConfig(level=logging.DEBUG)
+>>> add(2, 3)
+DEBUG:__main__:add
+5
+>>> add.set_message('Add called')
+>>> add(2, 3)
+DEBUG:__main__:Add called
+5
+>>> add.set_level(logging.WARNING)
+>>> add(2, 3)
+WARNING:__main__:Add called
+5
+# 当使用add函数的定义方法时,add已经被logged装饰,并通过attach_wrapper将set_level和set_message动态绑定到了wrapper上
+# 因此,add得以能够直接调用set_message来修改属性
+# 但访问器函数最重要的特性不止于此,它可以跨越多个装饰器层级进行传播,无论函数被包装了多少层都能正确地运行,从而可以使得多层装饰器的所有属性变得可被访问与修改
+
+9.6-定义一个能接收可选参数的装饰器
+from functools import wraps
+import logging
+def logged(func=None, *, level=logging.DEBUG, name=None, message=None):
+	if func is None:
+		return partial(logged,level=level,name=name,message=message)
+        logname = name if name else func.__module__
+        log = logging.getLogger(logname)
+        logmsg = message if message else func.__name__
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            log.log(level, logmsg)
+            return func(*args, **kwargs)
+        return wrapper
+@logged(logging.DEBUG)
+def add(x, y):
+    return x + y
+@logged(logging.CRITICAL, 'example')
+def spam():
+    print('Spam!')
+# 使用partial函数即可让装饰器可以接收可选参数,也可以不接收可选参数。它返回一个部分完成的类,从而作为可调用对象继续包装函数
+
+9.7-利用装饰器对函数参数强制执行类型检查
+from inspect import signature
+from functools import wraps
+def typeassert(*ty_args, **ty_kwargs):
+    def decorate(func):
+        if not __debug__:
+            return func
+        sig = signature(func)
+        bound_types = sig.bind_partial(*ty_args, **ty_kwargs).arguments
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            bound_values = sig.bind(*args, **kwargs)
+            # Enforce type assertions across supplied arguments
+            for name, value in bound_values.arguments.items():
+                if name in bound_types:
+                    if not isinstance(value, bound_types[name]):
+                        raise TypeError(
+                            'Argument {} must be {}'.format(name, bound_types[name])
+                            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorate
+# 这段代码相当灵活,当我们不需要类型检查时,if not __debug__:将会直接返回包装函数而不经过装饰器处理
+# 而当需要类型检查时,我们用signature获取函数签名,typeassert接受类型约束并返回decorate
+# 通过bound_types = sig.bind_partial(*ty_args, **ty_kwargs).arguments来绑定类型约束并得到bound_types
+# bound_types记录需要检查的参数及其类型,然后返回wrapper。wrapper将参数值与函数签名绑定,得到bound_values
+# 然后遍历所有参数若参数名在bound_types中,检查其类型是否符合预期。如果不符合,抛出TypeError。
+# 因此,我们在使用该装饰器前可以定义任意参数的类型检查
+
+9.8-在类中定义装饰器
+from functools import wraps
+class A:
+    def decorator1(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            print('Decorator 1')
+            return func(*args, **kwargs)
+        return wrapper
+    @classmethod
+    def decorator2(cls, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            print('Decorator 2')
+            return func(*args, **kwargs)
+        return wrapper
+# 在类中有两种装饰器的定义方式,分别是以实例方法还是以类方法的形式应用
+# 在外层的装饰器函数需要使用cls或者self参数,但内层定义的包装函数一般不需要包含额外的参数
+# 而要把类A的装饰器施加到子类中的方法上,则必须像这样使用
+class B(A):
+	@A.decorator2
+	def bar(self):
+		pass
+
+9.9-把装饰器定义为类
+要把装饰器定义成类实例,需要确保在类中实现__call__和__get__方法
+import types
+from functools import wraps
+class Profiled:
+    def __init__(self, func):
+        wraps(func)(self)
+        self.ncalls = 0
+    def __call__(self, *args, **kwargs):
+        self.ncalls += 1
+        return self.__wrapped__(*args, **kwargs)
+    def __get__(self, instance, cls):
+        if instance is None:
+            return self
+        else:
+            return types.MethodType(self, instance)
+@Profiled
+def add(x,y):
+	return x + y
+class Spam:
+	@Profiled
+	def bar(self,x):
+		print(self,x)
+
+9.10-把装饰器作用到类和静态方法上
+import time
+from functools import wraps
+def timethis(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        r = func(*args, **kwargs)
+        end = time.time()
+        print(end-start)
+        return r
+    return wrapper
+class Spam:
+    @timethis
+    def instance_method(self, n):
+        print(self, n)
+        while n > 0:
+            n -= 1
+    @classmethod
+    @timethis
+    def class_method(cls, n):
+        print(cls, n)
+        while n > 0:
+            n -= 1
+    @staticmethod
+    @timethis
+    def static_method(n):
+        print(n)
+        while n > 0:
+            n -= 1
+# 确保装饰器在应用的时候放在@staticmethod和@classmethod之前
+# 主要问题在于@staticmethod和@classmethod并不会实际创建可调用对象,创建的是特殊的描述符对象
+
+9.11-编写装饰器为被包装的函数添加参数
+使用keyword-only
+from functools import wraps
+import inspect
+def optional_debug(func):
+	if 'debug' in inspect.signature(func).parameters:
+		raise TypeError('debug argument already defined')
+	@wraps(func)
+	def wrapper(*args,debug=False,**kwargs):
+		if debug:
+			print('Calling',func.__name__)
+		return func(*args,**kwargs)
+	sig = inspect.signature(func)
+	parms = list(sig.parameters,values())
+	parms.append(inspect.Parameter('debug',inspect.Parameter.KEYWORD_ONLY,default=False))
+	wrapper.__signature__ = sig.replace(parameters=parms)
+	return wrapper
+# 利用keyword-only将额外的参数注入到函数的调用签名中,从而实现为被包装的函数添加参数。即任何使用optional_debug的装饰器的函数都可以使用debug关键字参数
+# 但需要注意一个已经把debug作为参数的包装函数使用该装饰器会引起报错,因此最好添加检查
+# 最后用inspect.signature获取签名对象,确保装饰后的函数签名正确反映新增的debug参数
+
+9.12-利用装饰器给类定义打补丁
+修改一部分类的定义,但不通过继承或元类的方式来做
+def log_getattribute(cls):
+    orig_getattribute = cls.__getattribute__
+    def new_getattribute(self, name):
+        print('getting:', name)
+        return orig_getattribute(self, name)
+    cls.__getattribute__ = new_getattribute
+    return cls
+@log_getattribute
+class A:
+    def __init__(self,x):
+        self.x = x
+    def spam(self):
+        pass
+# 通过装饰器修改__getattribute__的定义
+
+9.13-利用元类来控制实例的创建
+import weakref
+class Cached(type):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__cache = weakref.WeakValueDictionary()
+    def __call__(self, *args):
+        if args in self.__cache:
+            return self.__cache[args]
+        else:
+            obj = super().__call__(*args)
+            self.__cache[args] = obj
+            return obj
+class Spam(metaclass=Cached):
+    def __init__(self, name):
+        print('Creating Spam({!r})'.format(name))
+        self.name = name
+# 通过__call__方法利用元类来控制实例创建,如这段代码用Cached的WeakValueDictionary创建一个弱引用字典缓存实例
+# __call__方法在类创建实例时调用,如果args已存在弱引用字典中则直接返回缓存的实例,若未缓存则创建新实例
+
+9.14-获取类属性的定义顺序
+from collections import OrderedDict
+class Typed:
+    _expected_type = type(None)
+    def __init__(self, name=None):
+        self._name = name
+    def __set__(self, instance, value):
+        if not isinstance(value, self._expected_type):
+            raise TypeError('Expected ' + str(self._expected_type))
+        instance.__dict__[self._name] = value
+class Integer(Typed):
+    _expected_type = int
+class Float(Typed):
+    _expected_type = float
+class String(Typed):
+    _expected_type = str
+class OrderedMeta(type):
+    def __new__(cls, clsname, bases, clsdict):
+        d = dict(clsdict)
+        order = []
+        for name, value in clsdict.items():
+            if isinstance(value, Typed):
+                value._name = name
+                order.append(name)
+        d['_order'] = order
+        return type.__new__(cls, clsname, bases, d)
+    @classmethod
+    def __prepare__(cls, clsname, bases):
+        return OrderedDict()
+class Structure(metaclass=OrderedMeta):
+    def as_csv(self):
+        return ','.join(str(getattr(self,name)) for name in self._order)
+class Stock(Structure):
+    name = String()
+    shares = Integer()
+    price = Float()
+    def __init__(self, name, shares, price):
+        self.name = name
+        self.shares = shares
+        self.price = price
+# 使用OrderedDict有序字典与元类获取类的属性定义顺序,这段代码用Typed定义类型检查的描述符
+# Integer、Float、String表示具体类型描述符。OrderedMeta记录类属性的定义顺序,并绑定描述符名称
+# 主要是让__prepare__使用有序字典保留属性定义顺序,__new__动态修改类属性绑定描述符名称
+
+9.15-定义一个能接受可选参数的元类
+class MyMeta(type):
+    @classmethod
+    def __prepare__(cls, name, bases, *, debug=False, synchronize=False):
+        pass
+        return super().__prepare__(name, bases)
+    def __new__(cls, name, bases, ns, *, debug=False, synchronize=False):
+        pass
+        return super().__new__(cls, name, bases, ns)
+    def __init__(self, name, bases, ns, *, debug=False, synchronize=False):
+        pass
+        super().__init__(name, bases, ns)
+class Spam(metaclass=MyMeta, debug=True, synchronize=True):
+    pass
+# 需要情报在__prepare__、__new__和__init__方法中都使用强制关键字参数。
+# 这是因为额外的参数会传递给每一个与该过程相关的方法。__prepare__是第一个被调用的,用来创建类的名称空间,在处理类的定义体之前完成
+# __new__用来实例化最终得到的类型对象,最后是__init__用来执行任何其他额外的初始化步骤
+
+9.16-在*argshe1**kwargs上强制规定一种参数签名
+任何关于操作函数调用签名的问题,都应该使用inspect模块中的相应功能
+>>> from inspect import Signature, Parameter
+>>> parms = [ Parameter('x', Parameter.POSITIONAL_OR_KEYWORD),
+...         Parameter('y', Parameter.POSITIONAL_OR_KEYWORD, default=42),
+...         Parameter('z', Parameter.KEYWORD_ONLY, default=None) ]
+>>> sig = Signature(parms)
+>>> print(sig)
+(x, y=42, *, z=None)
+# 创建一个签名对象
+>>> def func(*args, **kwargs):
+...     bound_values = sig.bind(*args, **kwargs)
+...     for name, value in bound_values.arguments.items():
+...         print(name,value)
+...
+>>> func(1, 2, z=3)
+x 1
+y 2
+z 3
+>>> func(1)
+x 1
+>>> func(1, z=3)
+x 1
+z 3
+>>> func(y=2, x=1)
+x 1
+y 2
+# 用bind方法轻松将其绑定到*args和**kwargs上,如果使用
+>>> func(1, 2, 3, 4)
+# 参数溢出,将会报错
+还有一种更为直观的例子,用基类定义一个通用的__init__,子类只提供一种接受的签名形式
+rom inspect import Signature, Parameter
+def make_sig(*names):
+    parms = [Parameter(name, Parameter.POSITIONAL_OR_KEYWORD)
+            for name in names]
+    return Signature(parms)
+class Structure:
+    __signature__ = make_sig()
+    def __init__(self, *args, **kwargs):
+        bound_values = self.__signature__.bind(*args, **kwargs)
+        for name, value in bound_values.arguments.items():
+            setattr(self, name, value)
+class Stock(Structure):
+    __signature__ = make_sig('name', 'shares', 'price')
+class Point(Structure):
+    __signature__ = make_sig('x', 'y')
+
+9.17-在类中强制规定编码约定
+如果想对类的定义进行监控,通常可以用元类来解决
+class MyMeta(type):
+    def __new__(self, clsname, bases, clsdict):
+        return super().__new__(cls, clsname, bases, clsdict)
+# 从type继承,重定义__new__,或者__init__,如下
+class MyMeta(type):
+    def __init__(self, clsname, bases, clsdict):
+        super().__init__(clsname, bases, clsdict)
+# 要使用这种元类,一般会将其作用到一个顶层基类上,然后让其他子类继承。元类的一个核心功能就是允许在定义类的时候对类本身的内容进行检查
+# 在重新定义的__init__方法中,可以自由地检查类字典、基类以及其他更多信息,如
+from inspect import signature
+import logging
+class MatchSignaturesMeta(type):
+    def __init__(self, clsname, bases, clsdict):
+        super().__init__(clsname, bases, clsdict)
+        sup = super(self, self)
+        for name, value in clsdict.items():
+            if name.startswith('_') or not callable(value):
+                continue
+            prev_dfn = getattr(sup,name,None)
+            if prev_dfn:
+                prev_sig = signature(prev_dfn)
+                val_sig = signature(value)
+                if prev_sig != val_sig:
+                    logging.warning('Signature mismatch in %s. %s != %s',
+                                    value.__qualname__, prev_sig, val_sig)
+class Root(metaclass=MatchSignaturesMeta):
+    pass
+class A(Root):
+    def foo(self, x, y):
+        pass
+    def spam(self, x, *, z):
+        pass
+class B(A):
+    def foo(self, a, b):
+        pass
+    def spam(self,x,z):
+        pass
+# MatchSignaturesMeta在类创建时自动门检查所有方法的签名,使用super().__init__(clsname, bases, clsdict)创建类
+# sup = super(self, self)获取父类,跳过所有私有方法或非可调用对象,检查所有同名父类方法,如果签名不匹配则发出警告
+
+9.18-通过编程的方式来定义类
+可以使用函数type.new_class()来实例化新的类对象,所有要做的就是提供类的名称、父类名组成的元组、关键字参数以及一个用来产生类字典的回调。示例如下:
+def __init__(self, name, shares, price):
+    self.name = name
+    self.shares = shares
+    self.price = price
+def cost(self):
+    return self.shares * self.price
+
+cls_dict = {
+    '__init__' : __init__,
+    'cost' : cost,
+}
+
+import types
+
+Stock = types.new_class('Stock', (), {}, lambda ns: ns.update(cls_dict))
+Stock.__module__ = __name__
+# 注意__module__属性需要设置妥当,如果需要参数,可以这样提供
+Spam = types.new_class('Spam', (Base,),
+                        {'debug': True, 'typecheck': False},
+                        lambda ns: ns.update(cls_dict))
+
+9.19-在定义的时候初始化类成员
+使用元类,这是它的经典用途
+import operator
+class StructTupleMeta(type):
+    def __init__(cls, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for n, name in enumerate(cls._fields):
+            setattr(cls, name, property(operator.itemgetter(n)))
+class StructTuple(tuple, metaclass=StructTupleMeta):
+    _fields = []
+    def __new__(cls, *args):
+        if len(args) != len(cls._fields):
+            raise ValueError('{} arguments required'.format(len(cls._fields)))
+        return super().__new__(cls,args)
+class Stock(StructTuple):
+    _fields = ['name', 'shares', 'price']
+class Point(StructTuple):
+    _fields = ['x', 'y']
+# 类StructTupleMeta接受属性_fields中的属性名称,并利用operator.itemgetter(n)创建了一个访问器函数
+# property()将其转换成属性方法,让Stock.name等价于Stock[0]
+
+9.20-通过函数注解来实现方法重载
+import inspect
+import types
+class MultiMethod:
+    def __init__(self, name):
+        self._methods = {}
+        self.__name__ = name
+    def register(self, meth):
+        sig = inspect.signature(meth)
+        types = []
+        for name, parm in sig.parameters.items():
+            if name == 'self':
+                continue
+            if parm.annotation is inspect.Parameter.empty:
+                raise TypeError(
+                    'Argument {} must be annotated with a type'.format(name)
+                )
+            if not isinstance(parm.annotation, type):
+                raise TypeError(
+                    'Argument {} annotation must be a type'.format(name)
+                )
+            if parm.default is not inspect.Parameter.empty:
+                self._methods[tuple(types)] = meth
+            types.append(parm.annotation)
+        self._methods[tuple(types)] = meth
+    def __call__(self, *args):
+        types = tuple(type(arg) for arg in args[1:])
+        meth = self._methods.get(types, None)
+        if meth:
+            return meth(*args)
+        else:
+            raise TypeError('No matching method for types {}'.format(types))
+    def __get__(self, instance, cls):
+        if instance is not None:
+            return types.MethodType(self, instance)
+        else:
+            return self
+class MultiDict(dict):
+    def __setitem__(self, key, value):
+        if key in self:
+            # If key already exists, it must be a multimethod or callable
+            current_value = self[key]
+            if isinstance(current_value, MultiMethod):
+                current_value.register(value)
+            else:
+                mvalue = MultiMethod(key)
+                mvalue.register(current_value)
+                mvalue.register(value)
+                super().__setitem__(key, mvalue)
+        else:
+            super().__setitem__(key, value)
+class MultipleMeta(type):
+    def __new__(cls, clsname, bases, clsdict):
+        return type.__new__(cls, clsname, bases, dict(clsdict))
+
+    @classmethod
+    def __prepare__(cls, clsname, bases):
+        return MultiDict()
+class Spam(metaclass=MultipleMeta):
+    def bar(self, x:int, y:int):
+        print('Bar 1:', x, y)
+    def bar(self, s:str, n:int = 0):
+        print('Bar 2:', s, n)
+import time
+class Date(metaclass=MultipleMeta):
+    def __init__(self, year: int, month:int, day:int):
+        self.year = year
+        self.month = month
+        self.day = day
+    def __init__(self):
+        t = time.localtime()
+        self.__init__(t.tm_year, t.tm_mon, t.tm_mday)
+# 通过函数注解来实现多分派,根据不同的参数类型自动调用不同的方法。元类MutipleMeta使用__prepare__方法来提供一个定制化的类字典,当设定字典中的条目时
+# MultiDict会检查条目是否已经存在,如果已经存在,则重复的条目会被合并到MultiMethmod的一个类实例中去。MultiMethmod类实例会通过构建一个从类型签名
+# 到函数的映射关系来将方法收集到一起。在构建的时候,通过函数注解来收集这些签名并构建出映射关系,这些都是在MultiMethmod.register方法中完成。关于这个
+# 映射,重要的地方在于为了实现多方法重载,必须给所有的参数都指定类型,否则就会出错
+
+9.21-避免出现重复的属性方法
+class Person:
+    def __init__(self, name ,age):
+        self.name = name
+        self.age = age
+    @property
+    def name(self):
+        return self._name
+    @name.setter
+    def name(self, value):
+        if not isinstance(value, str):
+            raise TypeError('name must be a string')
+        self._name = value
+    @property
+    def age(self):
+        return self._age
+    @age.setter
+    def age(self, value):
+        if not isinstance(value, int):
+            raise TypeError('age must be an int')
+        self._age = value
+# 这个类可改为
+def typed_property(name, expected_type):
+    storage_name = '_' + name
+    @property
+    def prop(self):
+        return getattr(self, storage_name)
+    @prop.setter
+    def prop(self, value):
+        if not isinstance(value, expected_type):
+            raise TypeError('{} must be a {}'.format(name, expected_type))
+        setattr(self, storage_name, value)
+    return prop
+class Person:
+    name = typed_property('name', str)
+    age = typed_property('age', int)
+    def __init__(self, name, age):
+        self.name = name
+        self.age = age
+# 使用闭包的方式生成属性代码并返回产生的属性对象
+# 还可以用functools.partial函数
+from functools import partial
+String = partial(typed_property,expected_type=str)
+Integer = partial(typed_property,expected_type=int)
+class Person:
+	name = String('name')
+	age = Integer('age')
+	def __init__(self,name,age):
+		self.name = name
+		self.age = age
+
+9.22-以简单的方式定义上下文管理器
+编写一种新的上下文管理器最直接的一种方式就是使用contextlib模块的@contextmanager装饰器
+import time
+from contextlib import contextmanager
+@contextmanager
+def timethis(label):
+	start = time.time()
+	try:
+		yield
+	finally:
+		end = time.time()
+		print('{}: {}'.format(label, end - start))
+with timethis('counting'):
+	n = 10000000
+	while n > 0:
+		n -= 1
+# 在timethis函数中,所有位于yield之前的代码会作为上下文管理器的__enter__方法来执行。所有位于yield之后的代码会作为__exit__方法执行
+# 而如果有异常产生,则会在yield中抛出
+@contextmanager
+def list_transaction(orig_list):
+    working = list(orig_list)
+    yield working
+    orig_list[:] = working
+# 这段上下文管理器实现了对列表对象的处理,在yield之前的代码作为__enter__方法执行,只有上下文管理器结束调用__exit__方法时才会真正地修改列表
+# 如果中间出现了报错,则所有修改都不会真正执行。一般情况下,不用@contextmanager编写上下文管理器需要定义一个带有__enter__和__exit__方法的类
+# 虽然繁琐,但有一些不被@contextmanager支持的对象还是需要分别实现这两个方法才能在with中使用
+
+9.23-执行带有局部副作用的代码
+exec函数的作用域问题通常需要使用locals函数在调用exec之前获取一个保存了局部变量的字典
+紧接着,就可以从本地字典中提取出修改过的值
+def test():
+	a = 13
+	loc = locals()
+	exec('b = a + 1')
+	b = loc['b']
+	print(b)
+# 这样,后续调用test函数,b变量在此作用域下依然可见
+默认情况下,exec函数是在调用方的局部和全局作用域中执行代码的。然而在函数内部,传递给exec的局部作用域是一个字典,而这个字典是实际局部变量的一份拷贝
+因此,如果在exec中执行的代码对局部变量做出了任何修改,这个修改绝不会反映到实际的局部变量中去
+
+9.24-解析并分析Python源代码
+使用exec函数可以执行以字符串形式提供的源代码
+而使用ast模块可以将源代码编译为一个抽象语法树,可用来分析源代码
+import ast
+ex = ast.parse('2 + 3*4 + x',mode='eval')
+ast.dump(ex)
+有了ast模块,我们可以先将代码转换为一课AST树,然后检查其中的一些细节来观察代码要完成哪些任务,也可以编写工具检查模块的整份源码,并在此之上进行一些静态分析
+如果对此熟练,还可以重写AST来表示新的源码
+import ast
+import inspect
+class NameLower(ast.NodeVisitor):
+    def __init__(self, lowered_names):
+        self.lowered_names = lowered_names
+    def visit_FunctionDef(self, node):
+        code = '__globals = globals()\n'
+        code += '\n'.join("{0} = __globals['{0}']".format(name)
+                            for name in self.lowered_names)
+        code_ast = ast.parse(code, mode='exec')
+        node.body[:0] = code_ast.body
+        self.func = node
+def lower_names(*namelist):
+    def lower(func):
+        srclines = inspect.getsource(func).splitlines()
+        for n, line in enumerate(srclines):
+            if '@lower_names' in line:
+                break
+        src = '\n'.join(srclines[n+1:])
+        if src.startswith((' ','\t')):
+            src = 'if 1:\n' + src
+        top = ast.parse(src, mode='exec')
+        cl = NameLower(namelist)
+        cl.visit(top)
+        temp = {}
+        exec(compile(top,'','exec'), temp, temp)
+        func.__code__ = temp[func.__name__].__code__
+        return func
+    return lower
+
+9.25-将Python源码分解为字节码
+dis模块可用来将任何python函数分解为字节码序列
+def countdown(n):
+	while n > 0:
+		print('T-minus',n)
+		n -= 1
+	print('Blastoff!')
+import dis
+dis.dis(countdown)
+# 将countdown函数分解为底层字节码序列
+我们还可以将任何函数中感兴趣的原始字节码替换掉
+def add(x,y):
+	return x + y
+c = add.__code__
+import types
+newbytecode = b'xxxxxx'
+nc = types.CodeType(c.co_argcount,c.co_kwonlyargcount,c.co_nlocals,c.co_stacksize,c.co_flags,newbytecode,c.co_consts,
+					c.co_names,c.co_varnames,c.co_filename,c.co_name,c.co_firstlineno,c.co_lnotab)
+add.__code__ = nc
+add(2,3)
