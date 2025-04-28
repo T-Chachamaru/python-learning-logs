@@ -1,0 +1,705 @@
+12.1-启动和停止线程
+threading库可用来在单独的线程中执行任意的python可调用对象,要实现这种要求,可以创建一个Thread实例并为它提供期望执行的可调用对象
+import time
+def countdown(n):
+	while n > 0;
+		print("T-minus", n)
+		n -= 1
+		time.sleep(5)
+from threading import Thread
+t = Thread(target=countdown, args=(10,))
+t.start()
+# 创建一个线程实例,调用start方法正式开始执行。线程实例会在它们自己所属的系统级线程中执行,完全由操作系统来管理
+# 一但启动后,线程就开始独立地运行,直到目标函数返回为止,可以用线程实例的is_alive方法来判断线程是否还在运行
+# 也可以调用线程实例的join方法连接到某个线程上,这样会等待到该线程结束。解释器会一直运行,直到所有的线程都终结为止
+对于需要长时间运行的线程或一直不断运行的后台任务,应该把线程设置为daemon
+t = Thread(target=countdown, args(10,), daemon=True)
+t.start()
+# daemon线程无法被连接,主线程结束后自动销毁。而对于线程的其他操作与功能,需要自行构建,比如主动终止线程,这个线程必须要能够在某个指定的点上轮询退出状态
+class CountdownTask:
+	def __init__(self):
+		self._running = True
+	def terminate(self):
+		self._running = False
+	def run(self,n):
+		while self._running and n > 0:
+			print("T-minus", n)
+			n -= 1
+			time.sleep(5)
+c = CountdownTask()
+t = Thread(target=c.run, args=(10,))
+t.start()
+c.terminate
+如果线程会执行阻塞性的操作比如I/O,那么在轮询线程的退出状态的时候就要小心了,必须为线程加上超时检测
+class IOTask:
+	def terminate(self):
+		self._running = False
+	def run(self,sock):
+		sock.settimeout(5)
+		while self._running:
+			try:
+				data = sock.recv(8192)
+				break
+			except socket.timeout:
+				continue
+		return
+
+12.2-判断线程是否已经启动
+可以使用threading库中的Event对象,这个对象和条件标记类似,允许线程等待某个事件发生。初始状态时设置为0,如果事件没有被设置而线程正在等待该事件,那么线程就会被阻塞
+直到事件被设置为止。当有线程设置了这个事件,就会唤醒所有正在等待该事件的线程,如果线程等待的事件已经设置了,那么线程会继续执行
+from threading import Thread, Event
+import time
+def countdown(n, started_evt):
+	print("countdown starting")
+	started_evt.set()
+	while n > 0:
+		print("T-minus", n)
+		n -= 1
+		time.sleep(5)
+started_evt = Event()
+print("Launching countdown")
+t = Thread(target=countdown, args=(10,started_evt))
+t,start()
+started_evt.wait()
+print("countdown is running")
+# 使用started_evt阻塞控制线程
+Event对象最好只用于一次性的事件,即,创建一个事件,线程等待事件被设置,一但完成设置,Event对象就被丢弃
+如果线程打算一遍又一遍地重复通知某个事件,最好使用Condition对象来处理
+import threading
+import time
+class PeriodicTimer:
+    def __init__(self, interval):
+        self._interval = interval
+        self._flag = 0
+        self._cv = threading.Condition()
+    def start(self):
+        t = threading.Thread(target=self.run)
+        t.daemon = True
+        t.start()
+    def run(self):
+        while True:
+            time.sleep(self._interval)
+            with self._cv:
+                 self._flag ^= 1
+                 self._cv.notify_all()
+    def wait_for_tick(self):
+        with self._cv:
+            last_flag = self._flag
+            while last_flag == self._flag:
+                self._cv.wait()
+ptimer = PeriodicTimer(5)
+ptimer.start()
+def countdown(nticks):
+    while nticks > 0:
+        ptimer.wait_for_tick()
+        print('T-minus', nticks)
+        nticks -= 1
+def countup(last):
+    n = 0
+    while n < last:
+        ptimer.wait_for_tick()
+        print('Counting', n)
+        n += 1
+threading.Thread(target=countdown, args=(10,)).start()
+threading.Thread(target=countup, args=(5,)).start()
+# 一个周期性定时器,用_flag异或切换状态,_cv阻塞/唤醒线程,wait_for_tick阻塞并等待下一次触发,notify_all唤醒所有线程
+
+12.3-线程间通信
+使用队列,queue模块的Queue
+from queue import Queue
+from threading import Thread
+def producer(out_q):
+	while True:
+		out_q.put(data)
+def consumer(in_q):
+	while True:
+		data = in_q.get()
+q = Queue()
+t1 = Thread(target=consumer, args=(q,))
+t2 = Thread(target=producer, args=(q,))
+t1.start()
+t2.start()
+# 首先创建一个Queue实例,它会被所有的线程共享。之后线程可以用put或者get操作来给队列添加或移除元素
+使用队列时,如何对生产者和消费者的关闭过程进行同步协调需要一些技巧,一般是用一些特殊的终止值,当放入队列中时就使消费者退出
+from queue import Queue
+from threading import Thread
+_sentinel = object()
+def producer(out_q):
+	while running:
+		out_q.put(data)
+	out_q.put(_sentinel)
+def consumer(in_q):
+	while True:
+		data = in_q.get()
+		if data in _sentinel:
+			in_q.put(_sentinel)
+			break
+队列是线程间通信的最常见机制,但是只要添加了所需的锁和同步功能,就可以构建自己的线程安全型数据结构
+import heapq
+import threading
+class PriorityQueue:
+	def __init__(self):
+		self._queue = []
+		self._count = 0
+		self._cv = threading.Condition()
+	def put(self, item, priority):
+		with self._cv:
+			heapq.heapqpush(self._queue, (-priority, self._count, item))
+			self._count += 1
+			self._cv.notify()
+	def get(self):
+		with self._cv:
+			while len(self._queue) == 0:
+				self._cv.wait()
+			return heapq.heapqpop(self._queue)[-1]
+通过队列实现的线程间通信是一种单方向且不确定的过程,但Queue对象提供了一些基本的事件完成功能,比如task_done和join
+from queue import Queue
+from threading import Thread
+def producer(out_q):
+    while running:
+        out_q.put(data)
+def consumer(in_q):
+    while True:
+        data = in_q.get()
+        in_q.task_done()
+q = Queue()
+t1 = Thread(target=consumer, args=(q,))
+t2 = Thread(target=producer, args=(q,))
+t1.start()
+t2.start()
+q.join()
+当消费者进程已经处理了某项特定的数据,生产者线程需要对此立刻感知的话,应该将发送的数据和一个Event对象配对在一起
+from queue import Queue
+from threading import Thread, Event
+def producer(out_q):
+    while running:
+        evt = Event()
+        out_q.put((data, evt))
+        evt.wait()
+def consumer(in_q):
+    while True:
+        data, evt = in_q.get()
+        evt.set()
+
+12.4-对临界区加锁
+想要让可变对象安全地用在多线程环境中,可以利用threading库的Lock对象
+import threading
+class SharedCounter:
+    def __init__(self, initial_value = 0):
+        self._value = initial_value
+        self._value_lock = threading.Lock()
+    def incr(self,delta=1):
+        with self._value_lock:
+             self._value += delta
+    def decr(self,delta=1):
+        with self._value_lock:
+             self._value -= delta
+# 当使用with语句时,Lock对象可确保产生互斥的行为,同一时间只允许一个线程执行with语句块中的代码，with语句会在执行缩进的代码块时获取到锁
+# 当控制流离开缩进的语句块时释放这个锁
+
+12.5-避免死锁
+一种解决方式是给程序中的每个锁分配一个唯一的数字编号,并且在获取多个锁时只按照编号的升序方式来获取
+import threading
+from contextlib import contextmanager
+_local = threading.local()
+@contextmanager
+def acquire(*locks):
+    locks = sorted(locks, key=lambda x: id(x))
+    acquired = getattr(_local,'acquired',[])
+    if acquired and max(id(lock) for lock in acquired) >= id(locks[0]):
+        raise RuntimeError('Lock Order Violation')
+    acquired.extend(locks)
+    _local.acquired = acquired
+    try:
+        for lock in locks:
+            lock.acquire()
+        yield
+    finally:
+        for lock in reversed(locks):
+            lock.release()
+        del acquired[-len(locks):]
+# 正常地分配锁对象,想同一个或多个锁打交道时就使用acquire函数
+
+12.6-保存线程专有状态
+threading.local可以创建一个线程本地存储对象,在这个对象上保存和读取的属性只对当前运行的线程可见,其他线程无法感知
+from socket import socket, AF_INET, SOCK_STREAM
+import threading
+class LazyConnection:
+    def __init__(self, address, family=AF_INET, type=SOCK_STREAM):
+        self.address = address
+        self.family = AF_INET
+        self.type = SOCK_STREAM
+        self.local = threading.local()
+    def __enter__(self):
+        if hasattr(self.local, 'sock'):
+            raise RuntimeError('Already connected')
+        self.local.sock = socket(self.family, self.type)
+        self.local.sock.connect(self.address)
+        return self.local.sock
+    def __exit__(self, exc_ty, exc_val, tb):
+        self.local.sock.close()
+        del self.local.sock
+# 将socket保存为local.sock的形式
+from functools import partial
+def test(conn):
+    with conn as s:
+        s.send(b'GET /index.html HTTP/1.0\r\n')
+        s.send(b'Host: www.python.org\r\n')
+        s.send(b'\r\n')
+        resp = b''.join(iter(partial(s.recv, 8192), b''))
+    print('Got {} bytes'.format(len(resp)))
+if __name__ == '__main__':
+    conn = LazyConnection(('www.python.org', 80))
+    t1 = threading.Thread(target=test, args=(conn,))
+    t2 = threading.Thread(target=test, args=(conn,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+# 这样能正常工作,每个线程实际上创建了自己专属的socket连接,因此当不同的线程在socket上操作时不会互相产生影响
+
+12.7-创建线程池
+concurrent.futures库中有一个ThreadPoolExecutor类可用来实现这个目的
+from socket import AF_INET, SOCK_STREAM, socket
+from concurrent.futures import ThreadPoolExecutor
+def echo_client(sock, client_addr):
+    print('Got connection from', client_addr)
+    while True:
+        msg = sock.recv(65536)
+        if not msg:
+            break
+        sock.sendall(msg)
+    print('Client closed connection')
+    sock.close()
+def echo_server(addr):
+    pool = ThreadPoolExecutor(128)
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.bind(addr)
+    sock.listen(5)
+    while True:
+        client_sock, client_addr = sock.accept()
+        pool.submit(echo_client, client_sock, client_addr)
+echo_server(('',15000))
+# 使用concurrent.futures的ThreadPoolExecutor管理128个并发连接
+# 手动创建自己的线程池可以使用Queue,但应该使用ThreadPoolExecutor而不是手动实现
+
+12.8-实现简单的并行编程
+concurrent.futures库的ProcessPoolExecutor类可用来在单独运行的python解释器实例中执行计算密集型的函数
+假设有一个目录,里面全是gzip的apache服务器日志文件
+import gzip
+import io
+import glob
+def find_robots(filename):
+	robots = set()
+	with gzip.open(filename) as f:
+		for line in io.TextIOWrapper(f,encoding='ascii'):
+			fields = line.split()
+			if fields[6] == '/robots.txt':
+				robots.add(fields[0])
+	return robots
+def find_all_robots(logdir):
+	files = glob.glob(logdir+'/*.log.gz')
+	all_robots = set()
+	for robots in map(find_robots, files):
+		all_robots.update(robots)
+	return all_robots
+if __name__ == '__main__':
+	robots = find_all_robots('logs')
+	for ipaddr in robots:
+		print(ipaddr)
+# 这个脚本查找该目录所有访问robots的记录,而如果要使用多个CPU核心
+import gzip
+import io
+import glob
+from concurrent import futures
+def find_robots(filename):
+	rebots = set()
+	with gzip.open(filename) as f:
+		for line in io.TextIOWrapper(f,encoding='ascii'):
+			fields = line.split()
+			if fields[6] == '/robots.txt':
+				robots.add(fields[0])
+	return robots
+def find_all_robots(logdir):
+	files = glob.glob(logdir+'/*.log.gz')
+	all_robots = set()
+	with futures.ProcessPoolExecutor() as pool:
+		for robots in pool.map(find_robots, files):
+			all_robots.update(robots)
+	return all_robots
+if __name__ == '__main__':
+	robots = find_all_robots('logs')
+	for ipaddr in robots:
+		print(ipaddr)
+		
+12.9-如何规避GIL带来的限制
+对于CPU密集型的工作,即需要使用C语言扩展的任务,全局解释器锁GIL导致多线程程序无法充分利用多个CPU核心带来的优势,而不是计算密集型的任务则不会因为GIL带来太多影响
+如果完全使用python来编程,可以使用multiprocessing模块创建进程池
+...
+如果使用C语言扩展编程,则需要在C代码中插入特定的宏
+#include "Python.h"
+PyObject *pyfunc(PyObject *self, PyObject *args) {
+	...
+	Py_BEGIN_ALLON_THREADS
+	...
+	Py_END_ALLOW_THREADS
+	...
+}
+
+12.10-定义一个Actor任务
+from queue import Queue
+from threading import Thread, Event
+class ActorExit(Exception):
+    pass
+class Actor:
+    def __init__(self):
+        self._mailbox = Queue()
+    def send(self, msg):
+        self._mailbox.put(msg)
+    def recv(self):
+        msg = self._mailbox.get()
+        if msg is ActorExit:
+            raise ActorExit()
+        return msg
+    def close(self):
+        self.send(ActorExit)
+    def start(self):
+        self._terminated = Event()
+        t = Thread(target=self._bootstrap)
+        t.daemon = True
+        t.start()
+    def _bootstrap(self):
+        try:
+            self.run()
+        except ActorExit:
+            pass
+        finally:
+            self._terminated.set()
+    def join(self):
+        self._terminated.wait()
+    def run(self):
+        while True:
+            msg = self.recv()
+class PrintActor(Actor):
+    def run(self):
+        while True:
+            msg = self.recv()
+            print('Got:', msg)
+p = PrintActor()
+p.start()
+p.send('Hello')
+p.send('World')
+p.close()
+p.join()
+# 使用actor实例的send方法发送消息,消息将会放入到队列上,内部运行的线程会从队列中取出受到的消息进行处理
+# close方法通过在队列中放置特殊的终止值来关闭actor,用户可以通过继承actor类来定义新的actor,并重新定义run方法来实现自定义的处理
+# 自定义的代码可通过ActorExit异常来捕获终止请求,如果合适的话可以处理这个异常
+
+12.11-实现发布者/订阅者消息模式
+要实现这种模式,需要引入一个单独的交换或者网关这样的对象,作为所有消息的中介。
+ftom collections import defaultdict
+class Exchange:
+	def __init__(self):
+		self._subscribers = set()
+	def attach(self,task):
+		self._subscribers.add(task)
+	def detach(self,task):
+		self._subscribers.remove(task)
+	def send(self,msg):
+		for subscriber in self._subscribers:
+			subscriber.send(msg)
+_exchanges = defaultdict(Exchange)
+def get_exchange(name):
+	return _exchanges[name]
+# 这样的交换中介就是一个对象,保存了活跃的订阅者集合,提供关联、取消关联以及发送消息的方法。每个交换中介都由一个名称来标识
+# get_exchange函数简单地返回同给定的名称相关联的哪个Exchange对象
+
+12.12-使用生成器作为线程的替代方案
+def countdown(n):
+	while n > 0:
+		print("T-minus", n)
+		yield
+		n -= 1
+	print(Blastoff!")
+def countup(n):
+	x = 0
+	while x < n:
+		print("Counting up", x)
+		yield
+		x += 1
+from collections import deque
+class TaskScheduler:
+	def __init__(self):
+		self._task_queue = deque()
+	def new_task(self, task):
+		self._task_queue.append(task)
+	def run(self):
+		while self._task_queue:
+			task = self._task_queue.popleft()
+			try:
+				next(task)
+				self._task_queue.append(task)
+			except:
+				pass
+sched = TaskScheduler()
+sched.new_task(countdown(10))
+sched.new_task(countdown(5))
+sched.new_task(countup(15))
+sched.run()
+# TaskScheduler类以循环的方式运行了一系列的生成器函数,每个都运行到yield语句就暂停,实现了一个简单的任务调度器
+# 一般情况下,实现actor或网络服务器时可能会用生成器取代线程
+from collections import deque
+class ActorScheduler:
+    def __init__(self):
+        self._actors = { }
+        self._msg_queue = deque()
+    def new_actor(self, name, actor):
+        self._msg_queue.append((actor,None))
+        self._actors[name] = actor
+    def send(self, name, msg):
+        actor = self._actors.get(name)
+        if actor:
+            self._msg_queue.append((actor,msg))
+    def run(self):
+        while self._msg_queue:
+            actor, msg = self._msg_queue.popleft()
+            try:
+                 actor.send(msg)
+            except StopIteration:
+                 pass
+if __name__ == '__main__':
+    def printer():
+        while True:
+            msg = yield
+            print('Got:', msg)
+    def counter(sched):
+        while True:
+            n = yield
+            if n == 0:
+                break
+            sched.send('printer', n)
+            sched.send('counter', n-1)
+    sched = ActorScheduler()
+    sched.new_actor('printer', printer())
+    sched.new_actor('counter', counter(sched))
+    sched.send('counter', 10000)
+    sched.run()
+# 用生成器实现actor,完全没有用到线程
+from collections import deque
+from select import select
+class YieldEvent:
+    def handle_yield(self, sched, task):
+        pass
+    def handle_resume(self, sched, task):
+        pass
+class Scheduler:
+    def __init__(self):
+        self._numtasks = 0
+        self._ready = deque()
+        self._read_waiting = {}
+        self._write_waiting = {}
+    def _iopoll(self):
+        rset,wset,eset = select(self._read_waiting,
+                                self._write_waiting,[])
+        for r in rset:
+            evt, task = self._read_waiting.pop(r)
+            evt.handle_resume(self, task)
+        for w in wset:
+            evt, task = self._write_waiting.pop(w)
+            evt.handle_resume(self, task)
+    def new(self,task):
+        self._ready.append((task, None))
+        self._numtasks += 1
+    def add_ready(self, task, msg=None):
+        self._ready.append((task, msg))
+    def _read_wait(self, fileno, evt, task):
+        self._read_waiting[fileno] = (evt, task)
+    def _write_wait(self, fileno, evt, task):
+        self._write_waiting[fileno] = (evt, task)
+    def run(self):
+        while self._numtasks:
+             if not self._ready:
+                  self._iopoll()
+             task, msg = self._ready.popleft()
+             try:
+                 r = task.send(msg)
+                 if isinstance(r, YieldEvent):
+                     r.handle_yield(self, task)
+                 else:
+                     raise RuntimeError('unrecognized yield event')
+             except StopIteration:
+                 self._numtasks -= 1
+class ReadSocket(YieldEvent):
+    def __init__(self, sock, nbytes):
+        self.sock = sock
+        self.nbytes = nbytes
+    def handle_yield(self, sched, task):
+        sched._read_wait(self.sock.fileno(), self, task)
+    def handle_resume(self, sched, task):
+        data = self.sock.recv(self.nbytes)
+        sched.add_ready(task, data)
+class WriteSocket(YieldEvent):
+    def __init__(self, sock, data):
+        self.sock = sock
+        self.data = data
+    def handle_yield(self, sched, task):
+        sched._write_wait(self.sock.fileno(), self, task)
+    def handle_resume(self, sched, task):
+        nsent = self.sock.send(self.data)
+        sched.add_ready(task, nsent)
+class AcceptSocket(YieldEvent):
+    def __init__(self, sock):
+        self.sock = sock
+    def handle_yield(self, sched, task):
+        sched._read_wait(self.sock.fileno(), self, task)
+    def handle_resume(self, sched, task):
+        r = self.sock.accept()
+        sched.add_ready(task, r)
+class Socket(object):
+    def __init__(self, sock):
+        self._sock = sock
+    def recv(self, maxbytes):
+        return ReadSocket(self._sock, maxbytes)
+    def send(self, data):
+        return WriteSocket(self._sock, data)
+    def accept(self):
+        return AcceptSocket(self._sock)
+    def __getattr__(self, name):
+        return getattr(self._sock, name)
+if __name__ == '__main__':
+    from socket import socket, AF_INET, SOCK_STREAM
+    import time
+    def readline(sock):
+        chars = []
+        while True:
+            c = yield sock.recv(1)
+            if not c:
+                break
+            chars.append(c)
+            if c == b'\n':
+                break
+        return b''.join(chars)
+    class EchoServer:
+        def __init__(self,addr,sched):
+            self.sched = sched
+            sched.new(self.server_loop(addr))
+        def server_loop(self,addr):
+            s = Socket(socket(AF_INET,SOCK_STREAM))
+            s.bind(addr)
+            s.listen(5)
+            while True:
+                c,a = yield s.accept()
+                print('Got connection from ', a)
+                self.sched.new(self.client_handler(Socket(c)))
+        def client_handler(self,client):
+            while True:
+                line = yield from readline(client)
+                if not line:
+                    break
+                line = b'GOT:' + line
+                while line:
+                    nsent = yield client.send(line)
+                    line = line[nsent:]
+            client.close()
+            print('Client closed')
+    sched = Scheduler()
+    EchoServer(('',16000),sched)
+    sched.run()
+# 基于协程和事件循环的异步网络服务器,使用生成器实现异步,yield暂停,send恢复
+# select管理socket状态,Scheduler类模拟事件循环
+
+12.13-轮询多个线程队列
+利用隐藏的环回网络连接,针对每个想要轮询的队列,创建一对互联的socket,然后对其中一个socket执行写操作,以此表示数据存在
+另一个socket就传递给select或者类似的函数来轮询数据
+import queue
+import socket
+import os
+class PollableQueue(queue.Queue):
+    def __init__(self):
+        super().__init__()
+        if os.name == 'posix':
+            self._putsocket, self._getsocket = socket.socketpair()
+        else:
+            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server.bind(('127.0.0.1', 0))
+            server.listen(1)
+            self._putsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._putsocket.connect(server.getsockname())
+            self._getsocket, _ = server.accept()
+            server.close()
+    def fileno(self):
+        return self._getsocket.fileno()
+    def put(self, item):
+        super().put(item)
+        self._putsocket.send(b'x')
+    def get(self):
+        self._getsocket.recv(1)
+        return super().get()
+# 这定义了一种新的Queue实例,底层有一对互联的socket,put方法在将数据放入队列之后,对其中一个socket写入一个字节的数据
+# 当要把数据从队列中取出时,get方法就从另一个socket中把那个单独的字节读出。fileno方法使得这个队列可以用类似select
+# 这样的函数来轮询,基本上来说,fileno方法只是暴露出底层由get函数所使用的socket文件描述符
+
+12.14-在UNIX上加载守护进程
+创建一个合适的守护进程需要以精确的顺序调用一系列的系统调用,并小心注意其中的细节
+import os
+import sys
+import atexit
+import signal
+def daemonize(pidfile, *, stdin='/dev/null',stdout='/dev/null',stderr='/dev/null'):
+	if os.path.exists(pidfile):
+		raise RuntimeError('Already running')
+	try:
+		if os.fork() > 0:
+			raise SystemExit(0)
+	except OSError as e:
+		raise RuntimeError('fork #1 faild.')
+	os.chdir('/')
+	os.umask(0)
+	os.setsid()
+	try:
+		if os.fork() > 0:
+			raise SystemExit(0)
+	except OSError as e:
+		raise RuntimeError('fork #2 faild.')
+	sys.stdout.flush()
+	sys.stderr.flush()
+	with open(stdin, 'rb', 0) as f:
+		os.dup2(f.fileno(), sys.stdin.fileno())
+	with open(stdout, 'ab', 0) as f:
+		os.dup2(f.fileno(), sys.stdout.fileno())
+	with open(stderr, 'ab', 0) as f:
+		os.dup2(f.fileno(), sys.stderr.fileno())
+	with open(pidfile, 'w') as f:
+		print(os.getpid(), file=f)
+	atexit.register(lambda: os.remove(pidfile))
+	def sigterm_handler(signo, frame):
+		raise SystemExit(1)
+	signal.signal(signal.SIGTERM, sigterm_handler)
+def main():
+		import time
+		sys.stdout.write('Daemon started with pid {}\n'.format(os.getpid()))
+		while True:
+			sys.stdout.write('Daemon Alive! {}\n'.format(time.ctime()))
+			time.sleep(10)
+if __name__ == '__main__':
+	PIDFILE = '/tmp/daemon.pid'
+	if len(sys.argv) != 2:
+		print('Usage: {} [start|stop]'.format(sys.args[0]), file=sys.stderr)
+		raise SystemExit(1)
+	if sys.argv[1] == 'start':
+		try:
+			daemonize(PIDFILE, stdout='/tmp/daemon.log', stderr='/tmp/dameon.log')
+		except RuntimeError as e:
+			print(e, file=sys.stderr)
+			raise SystemExit(1)
+		main()
+	elif sys.argv[1] == 'stop':
+        if os.path.exists(PIDFILE):
+            with open(PIDFILE) as f:
+                os.kill(int(f.read()), signal.SIGTERM)
+        else:
+            print('Not running', file=sys.stderr)
+            raise SystemExit(1)
+    else:
+        print('Unknown command {!r}'.format(sys.argv[1]), file=sys.stderr)
+        raise SystemExit(1)

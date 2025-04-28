@@ -1,0 +1,222 @@
+10.1-把模块按层次结构组织成包
+创建一个软件包结构需要确保每个目录中都定义了一个__init__.py文件
+graphics/
+    __init__.py
+    primitive/
+        __init__.py
+        line.py
+        fill.py
+        text.py
+    formats/
+        __init__.py
+        png.py
+        jpg.py
+一但完成就可以执行各种各样的import语句
+import graphics.primitive.line
+from graphics.primitive import line
+import graphics.formats.jpg as jpg
+# __init__.py的目录就是包含可选的初始化代码,当遇到软件包中不同层次的模块时会触发运行。比如,如果写下import graphics语句,文件graphics/__init__.py就会被导入并形成graphics命名空间中的内容
+# 大部分的情况下,把__init__.py留空也是可以的,但是在某些特定的情况下,__init__.py文件中是需要包含代码的。例如可以用它来自动加载子模块
+from . import jpg
+from . import png
+# 有了这样一个文件,就不需要再去分别导入graphics.formats.jpg和graphics.formats.png了
+
+10.2-对所有符号的导入进行精确控制
+在模块中定义一个变量__all__,用来显式地列出可导出的符号名
+def spam():
+	pass
+def grok():
+	pass
+blah = 42
+__all__ = ['spam','grok']
+# 使用from module import *这样的导入方法会把所有不以_开头的符号名全部导出,而定义了__all__就只有显式列出的符号名才会被导出
+
+10.3-用相对名称来导入包中的子模块
+要在软件包的子模块中导入同一个包中的其他的子模块,使用相对名称来导入,假设有一个名为mypackage的包,组织形式如下
+mypackage/
+    __init__.py
+    A/
+        __init__.py
+        spam.py
+        grok.py
+    B/
+        __init__.py
+        bar.py
+如果模块mypackage.A.spam希望导入位于同一个目录中的模块grok,那么应该包含这样的import语句
+from . import grok
+如果希望导入位于不同目录中的模块B.bar
+from ..B import bar
+
+10.4-将模块分解成多个文件
+可以通过将模块转换成包的方式将模块分解成多个单独的文件
+class A:
+    def spam(self):
+        print('A.spam')
+class B(A):
+    def bar(self):
+        print('B.bar')
+假设想把这段代码分解为两个文件,每个文件中包含一个类的定义,可以从把这个文件替换成目录开始,如
+mymodule/
+    __init__.py
+    a.py
+    b.py
+在a.py中加入
+class A:
+    def spam(self):
+        print('A.spam')
+在b.py中加入
+from . import A
+class B(A):
+    def bar(self):
+        print('B.bar')
+在__init__.py中加入
+from .a import A
+from .b import B
+这样mymodule包就在逻辑上成为了一个单独的模块
+
+10.5-让各个目录下的代码在统一的命名空间下导入
+要使各个目录统一在一个公共的命名空间下,可以把代码像普通的python包那样进行组织。但是对于打算合并在一起的组件,这些目录中的__init__.py文件则需要忽略
+假设python代码位于两个不同的目录中
+foo-package/
+    spam/
+        blah.py
+bar-package/
+    spam/
+        grok.py
+这两个目录中,spam可以作为公共的命名空间,这两个目录中都没有__init__.py文件
+然后将foo-package和bar-package都添加到python的模块查询路径中,接着尝试做一些导入操作
+import sys
+>>> sys.path.extend(['foo-package','bar-package'])
+这两个不同的包目录魔法般合并到了一起,可以随意导入spam.blah或者spam.grok,不会遇到任何问题,这就是命名空间包
+
+10.6-重新加载模块
+imp.reload(spam)
+imp.reload会擦除模块底层字典的内容,并通过重新执行的源代码来刷新它。模块本身的标识并不会改变,因此,这使得已经导入到程序中的模块得到更新
+但是,对于from module import name这样的语句导入的定义,reload是不会去更新的
+
+10.7-让目录或zip文件成为可运行的脚本
+如果应用程序是由多个文件组成的目录结构,可以把它放到专属的目录中,并为之添加一个__main__.py文件
+myapplication/
+    spam.py
+    bar.py
+    grok.py
+    __main__.py
+# 有__main__.py文件,就可以在顶层目录中运行python解释器,就像这样
+bash % python3 myapplication
+# 解释器会把__main__.py文件作为主程序来执行。这项技术让我们把所有的代码打包进一个zip文件中时同样有效
+bash % python3 myapplication.zip
+# 还可以创建一个顶层的脚本来让执行变得更简单
+#!/usr/bin/env python3 /usr/local/bin/myapplication.zip
+
+10.8-读取包中的数据文件
+有这样一个目录结构
+mypackage/
+    __init__.py
+    somedata.dat
+    spam.py
+# 假设spam.py要读取somedata.dat中的内容
+import pkgutil
+data = pkgutil.get_data(__package__, 'somedata.dat')
+# 得到的结果会保存在变量data中。这是一个字节串,其中包含了文件的原始内容
+
+10.9-添加目录到sys.path中
+有两种常见的方法可以将新的目录添加到sys.path中,第一是通过使用PYTHONPATH环境变量来添加
+第二种方法是创建一个.pth文件,然后像这样讲目录列出来
+/some/dir
+/other/dir
+这样.pth文件需要放在python的其中一个site-packages目录中
+
+10.10-使用字符串中给定的名称来导入模块
+可以使用importlib.import_module函数来手动导入这个模块
+import importlib
+math = importlib.import_module('math')
+# importlib.import_module基本上完成和import差不多的事,只不过它把模块对象返回,需要用一个变量保存
+# 如果同包打交道,import_module也可以用来实现相对导入
+b = importlib.import_module('.b',__package__)
+
+10.11-利用import钩子从远端机器上加载模块
+最简单的方式显然是将模块发布到web服务器上,然后通过urllib.request的urlopen类读取远程文件,再用compile函数把源代码编译成对象,接着从新创建的模块对象的字典中执行它
+但与其通过urlopen函数手动从服务器上把源代码抓取下来。不如自定义import语句的行为,使其能够在幕后以透明的方式实现同样的目的,更加高级的方法就是创建一个自定义的导入器
+第一种办法是创建一个元路径导入器,代码如下
+第二种办法是编写一个hook，直接将其插入到sys.path变量中,用来识别特定的目录命名模式,代码如下
+-
+完全没看懂
+
+10.12-在模块加载时为其打补丁
+需要使用10.11中提到的hook技术
+import importlib
+import sys
+from collections import defaultdict
+_post_import_hooks = defaultdict(list)
+class PostImportFinder:
+    def __init__(self):
+        self._skip = set()
+    def find_module(self, fullname, path=None):
+        if fullname in self._skip:
+            return None
+        self._skip.add(fullname)
+        return PostImportLoader(self)
+class PostImportLoader:
+    def __init__(self, finder):
+        self._finder = finder
+    def load_module(self, fullname):
+        importlib.import_module(fullname)
+        module = sys.modules[fullname]
+        for func in _post_import_hooks[fullname]:
+            func(module)
+        self._finder._skip.remove(fullname)
+        return module
+def when_imported(fullname):
+    def decorate(func):
+        if fullname in sys.modules:
+            func(sys.modules[fullname])
+        else:
+            _post_import_hooks[fullname].append(func)
+        return func
+    return decorate
+sys.meta_path.insert(0, PostImportFinder())
+# 将@when_imported当做装饰器,把它注册成在导入时需要触发执行的处理函数。装饰器检查sys.modules,看某个模块是否被加载了。如果是,就立刻调用处理函数
+# 否则就将处理函数添加到_post_import_hooks中去
+
+10.13-安装只为自己所用的包
+可以把包安装到用户级目录下
+pip install --user packagename
+
+10.14-创建新的Python环境
+使用pyvenv可创建一个新的虚拟环境,在bin目录下拥有一个python解释器
+解释器把他的site目录与新创建的环境想关联,如果安装第三方包,就会被安装到虚拟环境中
+更多的有关虚拟环境的信息可以在官方文档找到
+
+10.15-发布自定义的包
+一个典型的库组织结构大概是这样的
+projectname/
+    README.txt
+    Doc/
+        documentation.txt
+    projectname/
+        __init__.py
+        foo.py
+        bar.py
+        utils/
+            __init__.py
+            spam.py
+            grok.py
+    examples/
+        helloworld.py
+        ...
+要使得包能够发布出去,首先编写一个setup.py文件,看起来是这样的
+# setup.py
+from distutils.core import setup
+setup(name='projectname',
+    version='1.0',
+    author='Your Name',
+    author_email='you@youraddress.com',
+    url='http://www.you.com/projectname',
+    packages=['projectname', 'projectname.utils'],
+)
+接下来是创建一个MANIFEST.in文件,并在其中列出各种希望包含在包中的非源代码文件
+# MANIFEST.in
+include *.txt
+recursive-include examples *
+recursive-include Doc *
+确保setup.py和MANIFEST.in位于顶层目录,接下来使用python3 setup.py sdist就能创建一个源代码级的分发包

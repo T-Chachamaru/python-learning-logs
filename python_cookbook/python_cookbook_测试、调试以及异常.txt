@@ -1,0 +1,184 @@
+14.1-测试发送到stdout上的输出
+利用unittest.mock模块的patch函数,很容易为单独的测试用例模拟出sys.stdout,用完后可将其收回
+mymoudle.py
+def urlprint(protocol, host, domain):
+	url = '{}://{}.{}'.format(protocol, host, domain)
+	print(url)
+from io import StringIO
+from unittest import TestCase
+from unittest.mock import patch
+import mymoudle
+
+class TestURLPrint(TestCase):
+	def test_url_gets_to_stdout(self):
+		protocol = 'http'
+		host = 'www'
+		domain = 'example.com'
+		expcted_url = '{}://{}.{}\n'.format(protocol, host, domain)
+		with patch('sys.stdout', new=StringIO()) as fake_out:
+			mymoudle.urlprint(protocol, host, domain)
+			self.assertEqual(fake_out.getvalue(), expected_url)
+# patch将sys.stdout替换为一个StringIO对象,在这个过程中会创建一个模拟对象,patch函数会方便地将所有状态还原为测试之前时的状态
+
+14.2-在单元测试中为对象打补丁
+unittest.mock.patch函数可以当做装饰器、上下文管理器或单独使用
+from unittest.mock import patch
+import example
+
+@patch('example.func')
+def test1(x, mock_func):
+	example.func(x)
+	mock_func.assert_called_with(x)
+# 上下文管理器的形式如上节所示,还可以用它来手动打补丁
+p = patch('example.func')
+mock_func = p.start()
+example.func(x)
+mock_func.assert_called_with(x)
+p.stop()
+# patch接受一个已有对象的完全限定名称并将其替换为一个新值,在装饰器函数或者上下文管理器结束执行后会将对象恢复为原始值。默认情况下对象会被替换为MagicMock实例,但可以将对象替换为任何希望的值
+
+14.3-在单元测试中检测异常情况
+检测异常可以用assertRaise方法完成
+import unittest
+def parse_int(s):
+	return int(s)
+class TestConversion(unittest.TestCase):
+	def test_bad_int(self):
+		self.assertRaises(ValueError, parse_int, 'N/A')
+但如果想要用某种方法检查异常的值,就要用到另一只不同的方法
+import errno
+class TestIO(unittest.TestCase):
+    def test_file_not_found(self):
+        try:
+            f = open('/file/not/found')
+        except IOError as e:
+            self.assertEqual(e.errno, errno.ENOENT)
+        else:
+            self.fail('IOError not raised')
+
+14.4-将测试结果作为日志记录到文件中
+import unittest
+class MyTest(unittest.TestCase)
+	...
+if __name__ == '__main__':
+	unittest.main()
+如果想要对输出做重定向,就需要把main展开,编写自己的main函数
+import sys
+def main(out=sys.stderr, verbosity=2):
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromModule(sys.modules[__name__])
+    unittest.TextTestRunner(out,verbosity=verbosity).run(suite)
+if __name__ == '__main__':
+    with open('testing.out', 'w') as f:
+        main(f)
+
+14.5-跳过测试,或者预计测试结果为失败
+import unittest
+import os
+import platform
+class Tests(unittest.TestCase):
+    def test_0(self):
+        self.assertTrue(True)
+    @unittest.skip('skipped test')
+    def test_1(self):
+        self.fail('should have failed!')
+    @unittest.skipIf(os.name=='posix', 'Not supported on Unix')
+    def test_2(self):
+        import winreg
+    @unittest.skipUnless(platform.system() == 'Darwin', 'Mac specific test')
+    def test_3(self):
+        self.assertTrue(True)
+    @unittest.expectedFailure
+    def test_4(self):
+        self.assertEqual(2+2, 5)
+if __name__ == '__main__':
+    unittest.main()
+
+14.6-处理多个异常
+try:
+	...
+except (URLError, ValueError):
+	...
+except SocketTimeout:
+	...
+# 用多个except捕获异常,也可以把通过使用基类异常加上别名来捕获异常
+try:
+	...
+except OSError as e:
+	if e.error == error.ENOENT:
+		...
+	elif e.error == error.EACCES:
+		...
+	else:
+		...
+# 可以通过检查异常的__mro__属性快速查阅调用与继承关系
+
+14.7-捕获所有的异常
+try:
+	...
+except Exception as e:
+	...
+# Exception能够捕获除了SystemExit、KeyboardInterrupt、GeneratorExit之外的所有异常,如果想要连这些异常也捕获,使用BaseException
+
+14.8-创建自定义的异常
+创建一个新的异常相当简单,只要定义成继承Exception类
+class NetworkError(Excetion):
+	pass
+class HostnameError(NetworkError):
+	pass
+class TimeoutError(NetworkError):
+	pass
+class ProtocolError(NetworkError):
+	pass
+# 接下来就可以用except指定这些异常
+
+14.9-通过引发异常来响应另一个异常
+要将异常串联起来,可以用raise from语句来替代普通的raise,这样做能够提供两个异常的有关消息
+def example():
+	try:
+		int('N/A')
+	except:
+		raise RuntimeError('A passing error occurred') from e...
+		
+14.10-重新抛出上一个异常
+def example():
+	try:
+		int('N/A')
+	except ValueError:
+		print("Didn't work")
+		raise
+# except语句块在执行了raise前的所有代码后才抛出异常
+
+14.11-发出告警信息
+使用warnnings.warn函数
+import warnings
+def func(x, y, logfile=None, debug=False):
+	if logfile is not None:
+		warnings.warn('logfile argument deprecated', DeprecationWarning)
+# 告警类别有UserWarning、DeprecationWarning、SyntaxWarning、RuntimeWarning、ResourceWarning、FutureWarning
+
+14.12-对基本的程序崩溃问题进行调试
+python3 -i sample.py
+# 使用-i选项来运行程序,如果程序崩溃了就会开启一个交互式的shell,用以分析出错原因
+# 在交互式的shell中,还可以导入pdb调试器来帮忙调试
+
+14.13-对程序做性能分析以及计时统计
+在unix系统中可用time命令简单统计运行时间
+time python3 someprogram.py
+如果想要一份详细的报告,可以使用cProfile模块
+python3 -m cProfile someprogram.py
+要在代码中针对性地对某几个函数进行性能分析,使用functools模块的wraps定义一个装饰器即可
+
+14.14-让你的程序运行得更快
+使用函数
+定义在全局范围内的代码运行起来比定义在函数中的代码要慢,因此如果想要让程序运行地更快,把那些可以放到函数中的代码在函数中运行更好
+所有大家才喜欢编写main函数,然后__name__ == '__main__'
+有选择性的消除属性访问
+每次使用句点操作符来访问属性时都会带来开销,通常可以通过from module import name的导入形式选择性地使用绑定方法来避免出现属性查询操作
+理解变量所处的位置
+访问局部变量与访问全局变量要更快,对于那些需要频繁访问的名称,可以想办法让其变成局部变量拉提升性能
+避免不必要的抽象
+当使用额外的装饰器、属性或者描述符来包装代码时,代码的运行速度就会变慢,如果不需要这种抽象机制,去掉能够让程序有更好的性能
+使用内建的容器
+自己构建的数据结构,例如链表和平衡二叉树等,大部分情况下都比不上使用C语言实现的内建数据结构要快
+避免产生不必要的数据结构或者拷贝动作

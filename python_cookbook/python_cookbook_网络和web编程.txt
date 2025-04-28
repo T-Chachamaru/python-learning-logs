@@ -1,0 +1,451 @@
+11.1-以客户端的形式同HTTP服务交互
+对于简单的任务,使用urllib.request模块就足够了,比如要发送一个简单的HTTP GET请求到远端服务器上
+from urllib import request,parse
+url = 'http://httpbin.org/get'
+parms = {
+	'name1':'value1',
+	'name2':'value2'
+	}
+querystring = parse.urlencode(parms)
+u = request.urlopen(url+'?'+querystring)
+resp = u.read()
+# 将parms作为请求参数对象并用url编码后拼接url用urlopen函数请求web服务
+from urllib import request,parse
+url = '...'
+parms = {
+	...
+	}
+querystring = parse.urlencode(parms)
+u = request.urlopen(url,querystring.encode('ascii'))
+resp = u.read()
+# POST方法的过程与GET方法大致相同,但在urlopen处需要以可选的方式提供请求体参数
+# 如果还想在请求中提供一些自定义的HTTP头,可以创建一个包含字段值的字典,创建一个request实例并将头部赋给它
+...
+headers = {
+	'User-agent':'none/ofyourbusiness',
+	'Spam':'Eggs'
+	}
+req = request.Request(url,querystring.encode('ascii'),headers=headers)
+u = request.urlopen(req)
+u.read()
+# 如果情况更加复杂,就需要去使用request库
+import request
+url = '...'
+parms = {
+	...
+	}
+headers = {
+	...
+	}
+resp = request.post(url,data=parms,headers=headers)
+text = resp.text
+# request还能够以多种方式从请求中返回响应结果的内容。text属性是以Unicode编码的文本,content则是二进制数据,json会是JSON格式的响应内容
+# 比如
+import request
+resp = request.head('...')
+status = resp.status_code
+last_modified = resp.headers['last-modified']
+content_type = resp.headers['content-type']
+content_length = resp.headers['content-length']
+# 发送head,并从响应中提取状态码和响应头等内容。还有
+resp = request.get('...',auth=('user','password'))
+# 使用基本认证登陆。以及
+resp1 = request.get(url)
+resp2 = request.get(url,cookies=resp1.cookies)
+# 将上一个请求获得的cookie传递给下一个请求
+files = { 'file':{'data.csv',open('data.csv','rb')} }
+r = request.post(url,files=fiels)
+# 文件上传
+
+11.2-创建一个TCP服务器
+创建TCP服务器的简单方式是使用socketserver库,比如创建一个简单的echo服务
+from socketserver import BaseRequestHandler, TCPServer
+class EchoHandler(BaseRequestHandler):
+	def handle(self):
+		print('Got conection from',self.client_address)
+		while True:
+			msg = self.request.recv(8192)
+			if not msg:
+				break
+			self.request.send(msg)
+if __name__ = '__main__':
+	serv = TCPServer(('',2000),EchoHandler)
+	serv.serve_forever()
+# 定义一个处理类,它实现了一个handle方法来服务于客户端的连接。这里的request属性就代表着底层客户端的socket,而client_address中保护了客户端的地址
+from socketserver import StreamRequestHandler, TCPServer
+class EchoHandler(StreamRequestHandler):
+	def handle(self):
+		print('Got connection from',self.client_address)
+		for line in self.rfile:
+			self.wfile.write(line)
+if __name__ == '__main__':
+	serv = TCPServer(('',20000),EchoHandler)
+	serv.serve_forever()
+# 使用StreamRequestHandler基类,rfile流式读取
+# 如果想要创建多线程的服务器,可以实例化ForkingTCPServer或者ThreadingTCPServer对象,将上文中的TCPServer全部替换就行
+# 但多线程服务器的问题在于允许连接的客户端数量是没有上限的,因此通常情况下可以创建一个预先分配好的工作者线程或进程池
+...
+if __name__ == '__main__':
+	from threading import Thread
+	NWORKERS = 16
+	serv = TCPServer(('',20000), EchoHandler)
+	for n in range(NWORKERS):
+		t = Thread(target=serv.serve_forever)
+		t.daemon = True
+		t.start()
+	serv.serve_forever()
+# 一般来说,TCPServer会在实例化的时候就绑定并激活底层的socket。但是有时候我们需要通过设定socket选项调整底层的socket行为
+# 这个时候可以在实例化的时候提供一个参数
+if __name__ == '__main__':
+	serv = TCPServer(('',20000), EchoHandler,bind_and_activate=False)
+	serv.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+	serv.server_bind()
+	serv.server_activate()
+	serv.serve_forever()
+# 大部分python的高级网络模块都是在socketserver的功能之上构建的。直接使用socket库来实现服务器也不会太麻烦
+from socket import socket, AF_INET, SOCK_STREAM
+def echo_handler(address, client_sock):
+    print('Got connection from {}'.format(address))
+    while True:
+        msg = client_sock.recv(8192)
+        if not msg:
+            break
+        client_sock.sendall(msg)
+    client_sock.close()
+def echo_server(address, backlog=5):
+    sock = socket(AF_INET, SOCK_STREAM)
+    sock.bind(address)
+    sock.listen(backlog)
+    while True:
+        client_sock, client_addr = sock.accept()
+        echo_handler(client_addr, client_sock)
+if __name__ == '__main__':
+    echo_server(('', 20000))
+
+11.3-创建一个UDP服务器
+使用socketserver库也能很容易地创建出UDP服务器
+from socketserver import BaseRequestHandler, UDPServer
+import time
+class TimeHandler(BaseRequestHandler):
+    def handle(self):
+        print('Got connection from', self.client_address)
+        msg, sock = self.request
+        resp = time.ctime()
+        sock.sendto(resp.encode('ascii'), self.client_address)
+if __name__ == '__main__':
+    serv = UDPServer(('', 20000), TimeHandler)
+    serv.serve_forever()
+	
+11.4-从CIDR地址中生成IP地址的范围
+有一个类似于123.45.67.89/27这样的CIDR网络地址,要生成由该地址表示的全部IP地址的范围,可以用ipaddress模块处理
+net = ipaddress.ip_network('123.45.67.89/27')
+# 它返回一个IPv4Network对象,遍历这个对象即可获取符合范围内的所有IP地址
+# ipaddress模块中有一些类可以用来表示IP地址、网络对象以及接口,如果要编写代码以某种方式来操作网络地址的话就非常有帮助了
+
+11.5-创建基于REST风格的简单接口
+根据WSGI规范创建一个小型的库
+import cgi
+def notfound_404(environ, start_response):
+    start_response('404 Not Found', [ ('Content-type', 'text/plain') ])
+    return [b'Not Found']
+class PathDispatcher:
+    def __init__(self):
+        self.pathmap = { }
+    def __call__(self, environ, start_response):
+        path = environ['PATH_INFO']
+        params = cgi.FieldStorage(environ['wsgi.input'],
+                                  environ=environ)
+        method = environ['REQUEST_METHOD'].lower()
+        environ['params'] = { key: params.getvalue(key) for key in params }
+        handler = self.pathmap.get((method,path), notfound_404)
+        return handler(environ, start_response)
+    def register(self, method, path, function):
+        self.pathmap[method.lower(), path] = function
+        return function
+import time
+_hello_resp = '''\
+<html>
+  <head>
+     <title>Hello {name}</title>
+   </head>
+   <body>
+     <h1>Hello {name}!</h1>
+   </body>
+</html>'''
+def hello_world(environ, start_response):
+    start_response('200 OK', [ ('Content-type','text/html')])
+    params = environ['params']
+    resp = _hello_resp.format(name=params.get('name'))
+    yield resp.encode('utf-8')
+_localtime_resp = '''\
+<?xml version="1.0"?>
+<time>
+  <year>{t.tm_year}</year>
+  <month>{t.tm_mon}</month>
+  <day>{t.tm_mday}</day>
+  <hour>{t.tm_hour}</hour>
+  <minute>{t.tm_min}</minute>
+  <second>{t.tm_sec}</second>
+</time>'''
+def localtime(environ, start_response):
+    start_response('200 OK', [ ('Content-type', 'application/xml') ])
+    resp = _localtime_resp.format(t=time.localtime())
+    yield resp.encode('utf-8')
+if __name__ == '__main__':
+    from resty import PathDispatcher
+    from wsgiref.simple_server import make_server
+    dispatcher = PathDispatcher()
+    dispatcher.register('GET', '/hello', hello_world)
+    dispatcher.register('GET', '/localtime', localtime)
+    httpd = make_server('', 8080, dispatcher)
+    print('Serving on port 8080...')
+    httpd.serve_forever()
+# 这段程序创建分发器实例,使用dispatcher.register注册了两个分发路由,并用make_server创建服务器
+REST风格的接口一般来说就是在编写响应常见HTTP请求的程序,但是与一个成熟的网站不同,通常我们只是在来回推送数据
+这个数据会以各种标准的格式进行编码,比如XML、JSON或者CSV,这种方式提供的API对于各种各样的应用程序都是非常有用的
+
+11.6-利用XML-RPC实现简单的远端过程调用
+from xmlrpc.server import SimpleXMLRPCServer
+class KeyValueServer:
+    _rpc_methods_ = ['get', 'set', 'delete', 'exists', 'keys']
+    def __init__(self, address):
+        self._data = {}
+        self._serv = SimpleXMLRPCServer(address, allow_none=True)
+        for name in self._rpc_methods_:
+            self._serv.register_function(getattr(self, name))
+    def get(self, name):
+        return self._data[name]
+    def set(self, name, value):
+        self._data[name] = value
+    def delete(self, name):
+        del self._data[name]
+    def exists(self, name):
+        return name in self._data
+    def keys(self):
+        return list(self._data)
+    def serve_forever(self):
+        self._serv.serve_forever()
+if __name__ == '__main__':
+    kvserv = KeyValueServer(('', 15000))
+    kvserv.serve_forever()
+# SimpleXMLRPCServer创建一个键值存储服务实例,即XML-RPC服务器。
+# register_function方法注册处理函数,serve_forever方法加载监听客户端请求
+
+11.7-在不同的解释器间进行通信
+multiprocessing.connection模块可以很方便地实现echo服务
+from multiprocessing.connection import Listener
+import traceback
+def echo_client(conn):
+    try:
+        while True:
+            msg = conn.recv()
+            conn.send(msg)
+    except EOFError:
+        print('Connection closed')
+def echo_server(address, authkey):
+    serv = Listener(address, authkey=authkey)
+    while True:
+        try:
+            client = serv.accept()
+            echo_client(client)
+        except Exception:
+            traceback.print_exc()
+echo_server(('', 25000), authkey=b'peekaboo')
+# 一个简单echo服务,与低级的socket不同,这里所有的消息都是完整无损的,此外,对象都是通过pickle来进行序列化的
+# 因此,任何同pickle兼容的对象都可以在连接之间传递和接收
+
+11.8-实现远端过程调用
+通过将函数请求、参数以及返回值用pickle进行编码,然后在解释器之间传递编码过的pickle字节串,RPC很容易实现
+import pickle
+class RPCHandler:
+    def __init__(self):
+        self._functions = { }
+    def register_function(self, func):
+        self._functions[func.__name__] = func
+    def handle_connection(self, connection):
+        try:
+            while True:
+                # Receive a message
+                func_name, args, kwargs = pickle.loads(connection.recv())
+                # Run the RPC and send a response
+                try:
+                    r = self._functions[func_name](*args,**kwargs)
+                    connection.send(pickle.dumps(r))
+                except Exception as e:
+                    connection.send(pickle.dumps(e))
+        except EOFError:
+             pass
+# 一个通用的RPC处理器,使用pickle进行数据的序列化与反序列化。通常也可以用JSON、XML或一些其他的数据编码来完成序列化操作
+
+11.9-以简单的方式验证客户端身份
+import hmac
+import os
+def client_authenticate(connection, secret_key):
+    message = connection.recv(32)
+    hash = hmac.new(secret_key, message)
+    digest = hash.digest()
+    connection.send(digest)
+def server_authenticate(connection, secret_key):
+    message = os.urandom(32)
+    connection.send(message)
+    hash = hmac.new(secret_key, message)
+    digest = hash.digest()
+    response = connection.recv(len(digest))
+    return hmac.compare_digest(digest,response)
+# 利用hmac模块实现一个握手连接来达到简单且高效的身份验证目的
+
+11.10-为网络服务增加SSL支持
+ssl模块可以为底层的socket连接添加对SSL的支持,用ssl.wrap_socket()函数接受一个已有的socket,并为其包装一个SSL层
+但底层的socket技巧无法和通过标准库实现的网络服务很好地结合在一起,需要使用混入类的技巧为服务器类添加对SSL的支持。
+具体参见http://docs.python.org/3/library/ssl.html
+
+11.11-在进程间传递socket文件描述符
+在unix系统上,可以使用unix域socket,在windows上可以使用命名管道。但利用multiprocessing模块比这些底层的利用机制更加简单。
+import multiprocessing
+from multiprocessing.reduction import recv_handle,send_handle
+import socket
+def worker(in_p,out_p):
+	out_p.close()
+	while True:
+		fd = recv_handle(in_p)
+		print("CHILD: GOT FD", fd)
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM, fileno=fd) as s:
+			while True:
+				msg = s.recv(1024)
+				if not msg:
+					break
+				print("CHILD: RECV {!r}".format(msg))
+				s.send(msg)
+def server(address, in_p, out_p, worker_pid):
+	in_p.close()
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+	s.bind(address)
+	s.listen(1)
+	while True:
+		client, addr = s.accept()
+		print("SERVER: Got connection from", addr)
+		send_handle(out_p, client.fileno(),worker_pid)
+		client.close()
+if __name__ == '__main__':
+	c1, c2 = multiprocessing.Pipe()
+	worker_p = multiprocessing.Process(traget=worker, args=(c1,c2))
+	worker_p.start()
+	server_p = multiprocessing.Process(target=server, args=(('', 15000), c1, c2, worker_p.pid))
+	server_p.start()
+	c1.close()
+	c2.close()
+# 生成两个监听进程,利用multiprocessing模块的Pipe对象将它们连接在一起。其中服务器进程打开一个socket并等待客户端的连接
+# 工作者进程只是通过recv_handle在管道上等待接收文件描述符。当服务器接收一条连接时,它会将得到的socket文件描述符
+# 通过send_handle发送给工作者进程。工作者进程接管这个socket并将数据回显给客户端直到连接关闭
+# 当然也可以将服务器进程和工作者进程分离成两个不同的程序,具体的实现可参考multiprocessing手册,并研究multiprocessing.reduction的源码
+
+11.12-理解事件驱动型I/O
+事件驱动I/O是一种将基本的I/O操作转换成事件的技术,而我们必须在程序中去处理这种事件。比如说,当在socket上收到数据时,这就成为一个接收事件
+由我们提供的回调方法或者函数负责处理以此来响应这个事件。一个事件驱动型框架可能会以一个基类作为起始点,实现一系列基本的事件处理方法,比如
+class EventHandler:
+	def fileno(self):
+		raise NotImplemented('must implement')
+	def wants_to_receive(self):
+		return False
+	def handle_receive(self):
+		pass
+	def wants_to_send(self):
+		return False
+	def handle_send(self):
+		pass
+# 然后可以把这个类的实例插入到一个事件循环中
+import select
+def event_loop(handlers):
+    while True:
+        wants_recv = [h for h in handlers if h.wants_to_receive()]
+        wants_send = [h for h in handlers if h.wants_to_send()]
+        can_recv, can_send, _ = select.select(wants_recv, wants_send, [])
+        for h in can_recv:
+            h.handle_receive()
+        for h in can_send:
+            h.handle_send()
+# select调用会轮询文件描述符并检查它们是否处于活跃状态。在这之前,事件循环简单地查询所有的处理方法,看是希望接收还是发送数据
+# 然后把查询的结果以列表的方式提供给select,然后,select会返回已经在接收或发送事件上就绪的对象列表,对应的handle_receive或者handle_send方法就被触发执行
+# 要编写应用程序,就需要创建特定的EventHandler类的实例,比如
+import socket
+import time
+class UDPServer(EventHandler):
+    def __init__(self, address):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(address)
+    def fileno(self):
+        return self.sock.fileno()
+    def wants_to_receive(self):
+        return True
+class UDPTimeServer(UDPServer):
+    def handle_receive(self):
+        msg, addr = self.sock.recvfrom(1)
+        self.sock.sendto(time.ctime().encode('ascii'), addr)
+class UDPEchoServer(UDPServer):
+    def handle_receive(self):
+        msg, addr = self.sock.recvfrom(8192)
+        self.sock.sendto(msg, addr)
+if __name__ == '__main__':
+    handlers = [ UDPTimeServer(('',14000)), UDPEchoServer(('',15000))  ]
+    event_loop(handlers)
+# 实现两个基于UDP的网络服务
+实现TCP服务就稍微复杂一点
+class TCPServer(EventHandler):
+    def __init__(self, address, client_handler, handler_list):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
+        self.sock.bind(address)
+        self.sock.listen(1)
+        self.client_handler = client_handler
+        self.handler_list = handler_list
+    def fileno(self):
+        return self.sock.fileno()
+    def wants_to_receive(self):
+        return True
+    def handle_receive(self):
+        client, addr = self.sock.accept()
+        self.handler_list.append(self.client_handler(client, self.handler_list))
+class TCPClient(EventHandler):
+    def __init__(self, sock, handler_list):
+        self.sock = sock
+        self.handler_list = handler_list
+        self.outgoing = bytearray()
+    def fileno(self):
+        return self.sock.fileno()
+    def close(self):
+        self.sock.close()
+        # Remove myself from the event loop's handler list
+        self.handler_list.remove(self)
+    def wants_to_send(self):
+        return True if self.outgoing else False
+    def handle_send(self):
+        nsent = self.sock.send(self.outgoing)
+        self.outgoing = self.outgoing[nsent:]
+class TCPEchoClient(TCPClient):
+    def wants_to_receive(self):
+        return True
+    def handle_receive(self):
+        data = self.sock.recv(8192)
+        if not data:
+            self.close()
+        else:
+            self.outgoing.extend(data)
+if __name__ == '__main__':
+   handlers = []
+   handlers.append(TCPServer(('',16000), TCPEchoClient, handlers))
+   event_loop(handlers)
+# 每个连接都会为客户端创建一个新的处理例程,当连接关闭时,每个客户端都必须将它们自己从列表中移除出去
+
+11.13-发送和接收大型数组
+def send_from(arr, dest):
+	view = memoryview(arr).cast('B')
+	while len(view):
+		nsent = dest.send(view)
+		view = view[nsend:]
+def recv_into(arr, source):
+	view = memoryview(arr).cast('B')
+	while len(view):
+		nrecv = source.recv_into(view)
+		view = view[nrecv:]
+# 利用memoryview

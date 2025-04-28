@@ -1,0 +1,226 @@
+13.1-通过重定向、管道或输入文件来作为脚本的输入
+可以使用fileinput模块
+#!/usr/bin/env python3
+import fileinput
+with fileinput.input() as f_input:
+	for line in f_input:
+		print(line, end='')
+# 这样就已经可以捕获重定向、管道以及输入文件的所有输入了
+
+13.2-终止程序并显示错误信息
+raise SystemExit('It failed!')
+
+13.3-解析命令行选项
+使用argparse模块,参考官方手册
+
+13.4-在运行时提供密码输入提示
+getpass模块可以为用户提供密码输入,而不会将密码显示在终端屏幕上
+import getpass
+user = getpass.getuser()
+passwd = getpass.getpass()
+if svc_login(user, passwd):
+	print(...)
+else:
+	print(...)
+
+13.5-获取终端大小
+os.get_terminal_size()
+
+13.6-执行外部命令并获取输出
+import subprocess
+out_bytes = subprocess.check_output(['netstat','-a'])
+# 运行指定的命令,并将输出结果以字节串的形式返回。可以使用decode解码
+# 如果执行的命令返回了一个非零的退出码则会产生异常
+# 默认情况下,check_output只会返回写入到标准输出中的结果,如果希望标准输出和错误输出都能获取到,则要指定关键字参数stderr=subprocess.STDOUT
+# 如果需要运行一个带有超时机制的命令,可以指定关键字参数timeout=5
+# 通常情况下命令的执行不依赖shell的支持,如果需要通过shell执行,只要将命令以简单的字符串形式提供并给定参数shell=True即可
+执行一个外部命令并获取输出,最简单的方法就是使用check_output函数,但是如果需要同一个子进程执行更加高级的通信,那就需要采用不同的方法
+import subprocess
+text = b'''
+hello world
+this is a test
+goodbye
+'''
+p = subprocess.Popen(['WC],
+	stdout = subprocess.PIPE,
+	stdin = subprocess.PIPE)
+stdout, stderr = p.communicate(text)
+out = stdout.decode('utf-8')
+err = stderr.decode('utf-8')
+
+13.7-拷贝或移动文件和目录
+import shutil
+shutil.copy(src, dst)
+shutil.copy2(src, dst)
+shutil.copytree(src, dst)
+shutil.move(src, dst)
+
+13.8-创建和解包归档文件
+可以使用shutil的make_archive和unpack_archive
+
+13.9-通过名称来查找文件
+使用os.walk遍历名称即可
+
+13.10-读取配置文件
+使用configparser模块来读取,假设有这样一个配置文件
+; config.ini
+; Sample configuration file
+
+[installation]
+library=%(prefix)s/lib
+include=%(prefix)s/include
+bin=%(prefix)s/bin
+prefix=/usr/local
+
+# Setting related to debug configuration
+[debug]
+log_errors=true
+show_warnings=False
+
+[server]
+port: 8080
+nworkers: 32
+pid-file=/tmp/spam.pid
+root=/www/root
+signature:
+    =================================
+    Brought to you by the Python Cookbook
+    =================================
+提取这个配置文件的语法是这样的
+>>> from configparser import ConfigParser
+>>> cfg = ConfigParser()
+>>> cfg.read('config.ini')
+['config.ini']
+>>> cfg.sections()
+['installation', 'debug', 'server']
+>>> cfg.get('installation','library')
+'/usr/local/lib'
+>>> cfg.getboolean('debug','log_errors')
+
+True
+>>> cfg.getint('server','port')
+8080
+>>> cfg.getint('server','nworkers')
+32
+>>> print(cfg.get('server','signature'))
+
+\=================================
+Brought to you by the Python Cookbook
+\=================================
+>>>
+还能用cfg.write()方法将其写回文件中
+>>> cfg.set('server','port','9000')
+>>> cfg.set('debug','log_errors','False')
+>>> import sys
+>>> cfg.write(sys.stdout)
+
+13.11-给脚本添加日志记录
+使用logging模块
+import logging
+def main():
+	logging.basicConfig(
+		filename = 'app.log',
+		level = logging.ERROR
+	)
+	hostname = 'www.python.org'
+	item = 'spam'
+	filename = 'data.csv'
+	mode = 'r'
+	logging.critical('Host %s unknown', hostname)
+	logging.error('Couldn't find %r', item)
+	logging.warning('Feature is deprecated')
+	logging.info('Opening file %r mode=%r', filename, mode)
+	logging.debug('Got here')
+	
+if __name__ == '__main__':
+	main()
+# 每个调用分别代表着不同的严重等级,level参数作为一个过滤器把所有低于此等级的信息都忽略掉
+# 每个日志操作的参数都是一条字符串消息,后面跟着零个或多个参数,%操作符来格式化字符串消息
+# 如上配置被硬编进了程序中,如果想从配置文件中进行配置,basicConfig调用改成这样
+logging.basicConfig('logconfig.ini')
+# logconfig.ini是这样的
+[loggers]
+keys=root
+
+[handlers]
+keys=defaultHandler
+
+[formatters]
+keys=defaultFormatter
+
+[logger_root]
+level=INFO
+handlers=defaultHandler
+qualname=root
+
+[handler_defaultHandler]
+class=FileHandler
+formatter=defaultFormatter
+args=('app.log', 'a')
+
+[formatter_defaultFormatter]
+format=%(levelname)s:%(name)s:%(message)s
+
+13.12-给库添加日志记录
+对于想执行日志记录的库来说,应该创建一个专用的日志对象并将其初始化为如下形式
+import logging
+log = logging.getLogger(__name__)
+log.addHandler(logging.NullHandler())
+def func():
+	log.critical('A Critical Error!')
+	log.debug('A debug message')
+# 默认情况下不会产生任何日志,但如果调用了basicConfig则会按照定义产生日志。__name__创建一个同名的日志模块,并用addHandler操作绑定一个
+# 空的处理例程,默认情况下会忽略所有的日志消息,需要进行单独配置。这可以将库中的多个模块分隔开来单独修改日志设定
+
+13.13-创建一个秒表计时器
+import time
+class Timer:
+	def __init__(self, func=time.perf_counter):
+		self.elapsed = 0.0
+		self._func = func
+		self._start = None
+	def start(self):
+		if self._start is not None:
+			raise RuntimeError('Already started')
+		self._start = self._func()
+	def stop(self):
+		if self._start is None:
+			raise RuntimeError('Not started')
+		end = self._func()
+		self.elapsed += end -self._start
+		self._start = None
+	def reset(self):
+		self.elapsed = 0.0
+	@property
+	def running(self):
+		return self._start is not None
+		def __enter__(self):
+			self.start()
+			return self
+		def __exit__(self, *args):
+			self.stop()
+			
+13.14-给内存和CPU使用量设定限制
+resource模块可用来执行这样的任务
+import signal
+import resource
+import os
+def time_exceeded(signo, frame):
+	print("Time's up!")
+	raise SystemExit(1)
+def set_max_runtime(seconds):
+	soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
+	resource.setrlimit(resource.RLIMIT_CPU, (resource, hard))
+	signal.signal(signal.SIGXCPU, time_exceeded)
+if __name__ == '__main__':
+	set_max_runtime(15)
+	while True:
+		pass
+
+13.15-加载Web浏览器
+使用webbrowser模块
+import webbrowser
+webbrowser.open('url') # 用默认浏览器打开页面
+webbrowser.new_open('url') # 用一个新的浏览器窗口打开页面
+webbrowser.open_new_tab('url') # 用一个新的标签页打开页面
+c = webbrowser.get('firebox') # 指定浏览器
