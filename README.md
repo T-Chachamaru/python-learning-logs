@@ -12,3 +12,5 @@
 * [python_playground](/python_playground/)<br>python极客编程的一些小项目,后面的opengl由于完全没接触过图形学,看不太懂。
 ### python_cookbook:
 * [python_cookbook](/python_cookbook/)<br>python_cookbook学习笔记,不看就亏了的好书。
+### python黑帽子:
+* [python黑帽子](/python黑帽子/)
